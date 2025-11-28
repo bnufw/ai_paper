@@ -1,0 +1,87 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Markdown 内容增强样式 */
+@layer components {
+  /* 论文查看器的 prose 样式优化 */
+  .prose code {
+    @apply bg-gray-100 px-1.5 py-0.5 rounded text-sm;
+  }
+
+  /* 移除内联代码的自动反引号 */
+  .prose code::before,
+  .prose code::after {
+    content: '' !important;
+  }
+
+  .prose pre {
+    @apply bg-gray-900 text-gray-100;
+  }
+
+  .prose pre code {
+    @apply bg-transparent p-0 text-sm;
+  }
+
+  .prose pre code::before,
+  .prose pre code::after {
+    content: '' !important;
+  }
+
+  /* 表格样式 */
+  .prose table {
+    @apply w-full border-collapse;
+  }
+
+  .prose th {
+    @apply bg-gray-100 font-semibold;
+  }
+
+  .prose td,
+  .prose th {
+    @apply border border-gray-300 px-4 py-2;
+  }
+
+  /* 链接样式 */
+  .prose a {
+    @apply text-blue-600 hover:text-blue-800 underline;
+  }
+
+  /* 引用块样式 */
+  .prose blockquote {
+    @apply border-l-4 border-blue-500 bg-blue-50 pl-4 py-2 italic;
+  }
+
+  /* 聊天消息中的 prose 样式调整 */
+  .prose-sm code {
+    @apply bg-gray-100 px-1 py-0.5 rounded text-xs;
+  }
+
+  .prose-sm code::before,
+  .prose-sm code::after {
+    content: '' !important;
+  }
+
+  .prose-sm pre {
+    @apply bg-gray-900 text-gray-100 text-xs;
+  }
+
+  .prose-sm pre code {
+    @apply bg-transparent p-0;
+  }
+
+  .prose-sm pre code::before,
+  .prose-sm pre code::after {
+    content: '' !important;
+  }
+
+  .prose-sm table {
+    @apply text-sm;
+  }
+
+  .prose-sm td,
+  .prose-sm th {
+    @apply px-2 py-1;
+  }
+}
+
