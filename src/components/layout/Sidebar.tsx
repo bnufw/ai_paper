@@ -5,9 +5,19 @@ interface SidebarProps {
   currentPaperId: number | null
   onSelectPaper: (paperId: number) => void
   onNewPaper: () => void
+  onOpenSettings: () => void
+  collapsed: boolean
+  onToggleCollapse: () => void
 }
 
-export default function Sidebar({ currentPaperId, onSelectPaper, onNewPaper }: SidebarProps) {
+export default function Sidebar({ 
+  currentPaperId, 
+  onSelectPaper, 
+  onNewPaper,
+  onOpenSettings,
+  collapsed,
+  onToggleCollapse 
+}: SidebarProps) {
   const [papers, setPapers] = useState<Paper[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -41,19 +51,58 @@ export default function Sidebar({ currentPaperId, onSelectPaper, onNewPaper }: S
   }
 
   return (
-    <div className="w-64 bg-gray-800 text-white flex flex-col">
-      {/* 顶部：新建按钮 */}
-      <div className="p-4 border-b border-gray-700">
+    <div className={`bg-gray-800 text-white flex flex-col transition-all duration-300 ${
+      collapsed ? 'w-16' : 'w-64'
+    }`}>
+      {/* 折叠/展开按钮 */}
+      <div className="p-4 border-b border-gray-700 flex justify-between items-center">
+        {!collapsed && (
+          <button
+            onClick={onNewPaper}
+            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg text-sm"
+          >
+            + 上传新论文
+          </button>
+        )}
         <button
-          onClick={onNewPaper}
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg"
+          onClick={onToggleCollapse}
+          className={`text-gray-400 hover:text-white transition-colors ${
+            collapsed ? 'w-full flex justify-center' : 'ml-2'
+          }`}
+          title={collapsed ? '展开侧边栏' : '收起侧边栏'}
         >
-          + 上传新论文
+          {collapsed ? '→' : '←'}
         </button>
       </div>
 
-      {/* 论文列表 */}
-      <div className="flex-1 overflow-y-auto">
+      {collapsed ? (
+        /* 折叠视图：仅显示图标 */
+        <div className="flex-1 flex flex-col items-center py-4 space-y-4">
+          <button
+            onClick={onNewPaper}
+            className="w-10 h-10 bg-blue-600 hover:bg-blue-700 rounded-lg flex items-center justify-center"
+            title="上传新论文"
+          >
+            +
+          </button>
+          {papers.slice(0, 5).map((paper) => (
+            <button
+              key={paper.id}
+              onClick={() => onSelectPaper(paper.id!)}
+              className={`w-10 h-10 rounded-lg flex items-center justify-center text-xs ${
+                currentPaperId === paper.id
+                  ? 'bg-blue-600'
+                  : 'bg-gray-700 hover:bg-gray-600'
+              }`}
+              title={paper.title}
+            >
+              📄
+            </button>
+          ))}
+        </div>
+      ) : (
+        /* 展开视图：显示完整列表 */
+        <div className="flex-1 overflow-y-auto">
         {loading ? (
           <div className="p-4 text-center text-gray-400">
             加载中...
@@ -99,10 +148,26 @@ export default function Sidebar({ currentPaperId, onSelectPaper, onNewPaper }: S
           </div>
         )}
       </div>
+      )}
 
-      {/* 底部：统计信息 */}
-      <div className="p-4 border-t border-gray-700 text-sm text-gray-400">
-        共 {papers.length} 篇论文
+      {/* 底部：设置和统计信息 */}
+      <div className="border-t border-gray-700">
+        {!collapsed && (
+          <div className="p-4 text-sm text-gray-400">
+            共 {papers.length} 篇论文
+          </div>
+        )}
+        <div className="p-4">
+          <button
+            onClick={onOpenSettings}
+            className={`w-full bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded-lg transition-colors ${
+              collapsed ? 'flex justify-center' : ''
+            }`}
+            title="设置"
+          >
+            {collapsed ? '⚙️' : '⚙️ 设置'}
+          </button>
+        </div>
       </div>
     </div>
   )

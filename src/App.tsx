@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import Header from './components/layout/Header'
 import Sidebar from './components/layout/Sidebar'
+import ResizablePanel from './components/layout/ResizablePanel'
 import APIKeySettings from './components/settings/APIKeySettings'
 import PDFUploader from './components/pdf/PDFUploader'
 import PDFViewer from './components/pdf/PDFViewer'
@@ -10,6 +10,7 @@ function App() {
   const [showSettings, setShowSettings] = useState(false)
   const [currentPaperId, setCurrentPaperId] = useState<number | null>(null)
   const [showUploader, setShowUploader] = useState(true)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
   const handlePaperSelect = (paperId: number) => {
     setCurrentPaperId(paperId)
@@ -27,18 +28,19 @@ function App() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-gray-100">
-      {/* Header */}
-      <Header onOpenSettings={() => setShowSettings(true)} />
+    <div className="h-screen flex bg-gray-100">
+      {/* Sidebar */}
+      <Sidebar
+        currentPaperId={currentPaperId}
+        onSelectPaper={handlePaperSelect}
+        onNewPaper={handleNewPaper}
+        onOpenSettings={() => setShowSettings(true)}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+      />
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Sidebar */}
-        <Sidebar
-          currentPaperId={currentPaperId}
-          onSelectPaper={handlePaperSelect}
-          onNewPaper={handleNewPaper}
-        />
 
         {/* Center Area */}
         <div className="flex-1 flex">
@@ -49,17 +51,13 @@ function App() {
             </div>
           ) : currentPaperId ? (
             /* Paper View: Split between PDF and Chat */
-            <>
-              {/* Left: PDF Viewer */}
-              <div className="w-1/2 border-r">
-                <PDFViewer paperId={currentPaperId} />
-              </div>
-
-              {/* Right: Chat Panel */}
-              <div className="w-1/2 overflow-hidden">
-                <ChatPanel paperId={currentPaperId} />
-              </div>
-            </>
+            <ResizablePanel
+              leftPanel={<PDFViewer paperId={currentPaperId} />}
+              rightPanel={<ChatPanel paperId={currentPaperId} />}
+              defaultLeftWidth={50}
+              minLeftWidth={30}
+              minRightWidth={30}
+            />
           ) : (
             /* Welcome Screen */
             <div className="flex-1 flex items-center justify-center">
@@ -68,7 +66,7 @@ function App() {
                   欢迎使用学术论文阅读器
                 </h2>
                 <p className="text-gray-600 mb-6">
-                  从左侧选择一篇论文开始阅读，或上传新的PDF
+                  从左侧选择一篇论文开始阅读,或上传新的PDF
                 </p>
                 <button
                   onClick={handleNewPaper}
