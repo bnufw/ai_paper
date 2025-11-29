@@ -20,7 +20,10 @@ export default function APIKeySettings({ onClose }: APIKeySettingsProps) {
     model: 'gemini-2.5-pro',
     temperature: 1.0,
     streaming: true,
-    useSearch: false
+    useSearch: false,
+    showThoughts: true,
+    thinkingBudget: 8192,
+    thinkingLevel: 'HIGH'
   })
 
   const [saving, setSaving] = useState(false)
@@ -207,6 +210,72 @@ export default function APIKeySettings({ onClose }: APIKeySettingsProps) {
                 </span>
               </label>
             </div>
+
+            <div className="mb-4">
+              <label className="flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={geminiSettings.showThoughts}
+                  onChange={(e) => setGeminiSettings({
+                    ...geminiSettings,
+                    showThoughts: e.target.checked
+                  })}
+                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <span className="ml-2 text-sm font-medium text-gray-700">
+                  显示思考过程
+                  <span className="text-gray-500 text-xs ml-2">(展示AI的推理过程)</span>
+                </span>
+              </label>
+            </div>
+
+            {/* 根据模型类型显示不同的思考配置 */}
+            {geminiSettings.model === 'gemini-3-pro-preview' ? (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  思考强度 (Thinking Level)
+                  <span className="text-gray-500 text-xs ml-2">(Gemini 3 Pro专用)</span>
+                </label>
+                <select
+                  value={geminiSettings.thinkingLevel || 'HIGH'}
+                  onChange={(e) => setGeminiSettings({
+                    ...geminiSettings,
+                    thinkingLevel: e.target.value as 'LOW' | 'HIGH'
+                  })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="LOW">LOW - 快速思考</option>
+                  <option value="HIGH">HIGH - 深度思考</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  LOW适合简单问题，HIGH适合复杂推理
+                </p>
+              </div>
+            ) : (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  思考预算 (Thinking Budget): {geminiSettings.thinkingBudget} tokens
+                  <span className="text-gray-500 text-xs ml-2">(0-32768,值越大思考越深入)</span>
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="32768"
+                  step="1024"
+                  value={geminiSettings.thinkingBudget}
+                  onChange={(e) => setGeminiSettings({
+                    ...geminiSettings,
+                    thinkingBudget: parseInt(e.target.value)
+                  })}
+                  className="w-full"
+                />
+                <div className="flex justify-between text-xs text-gray-500 mt-1">
+                  <span>关闭 (0)</span>
+                  <span>标准 (8192)</span>
+                  <span>深度 (32768)</span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

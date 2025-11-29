@@ -12,6 +12,8 @@ export function useChat(paperId: number) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [streamingText, setStreamingText] = useState('')
+  const [streamingThought, setStreamingThought] = useState('')
+  const [streamingStartTime, setStreamingStartTime] = useState<Date | null>(null)
 
   // 加载对话列表
   useEffect(() => {
@@ -158,6 +160,8 @@ export function useChat(paperId: number) {
     setLoading(true)
     setError('')
     setStreamingText('')
+    setStreamingThought('')
+    setStreamingStartTime(null)
 
     try {
       // 如果没有当前对话，创建一个
@@ -215,25 +219,41 @@ export function useChat(paperId: number) {
       }))
 
       // 调用AI (支持流式输出)
-      const response = await sendMessageToGemini(
+      const result = await sendMessageToGemini(
         paper.markdown, 
         content, 
         history,
         (text) => {
           // 流式输出回调
           setStreamingText(text)
+        },
+        (thought) => {
+          // 思考过程回调
+          setStreamingThought(thought)
+        },
+        (startTime) => {
+          // 生成开始回调
+          setStreamingStartTime(startTime)
         }
       )
 
-      // 清空流式文本
+      // 清空流式文本和时间
       setStreamingText('')
+      setStreamingThought('')
+      setStreamingStartTime(null)
 
       // 保存AI回复
       await db.messages.add({
         conversationId,
         role: 'assistant',
-        content: response,
-        timestamp: new Date()
+        content: result.content,
+        timestamp: new Date(),
+        thoughts: result.thoughts,
+        thinkingTimeMs: result.thinkingTimeMs,
+        generationStartTime: result.generationStartTime,
+        generationEndTime: result.generationEndTime,
+        groundingMetadata: result.groundingMetadata,
+        webSearchQueries: result.webSearchQueries
       })
 
       // 更新对话
@@ -253,6 +273,8 @@ export function useChat(paperId: number) {
       console.error('发送消息失败:', err)
       setError((err as Error).message)
       setStreamingText('')
+      setStreamingThought('')
+      setStreamingStartTime(null)
     } finally {
       setLoading(false)
     }
@@ -265,6 +287,8 @@ export function useChat(paperId: number) {
     loading,
     error,
     streamingText,
+    streamingThought,
+    streamingStartTime,
     sendMessage,
     createNewConversation,
     setCurrentConversationId,

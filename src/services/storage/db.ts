@@ -34,6 +34,12 @@ export interface Message {
   role: 'user' | 'assistant'
   content: string
   timestamp: Date
+  thoughts?: string
+  thinkingTimeMs?: number
+  generationStartTime?: Date
+  generationEndTime?: Date
+  groundingMetadata?: any
+  webSearchQueries?: string[]
 }
 
 // 设置类型
@@ -48,6 +54,9 @@ export interface GeminiSettings {
   temperature: number
   streaming: boolean
   useSearch: boolean
+  showThoughts: boolean
+  thinkingBudget: number
+  thinkingLevel?: 'LOW' | 'HIGH'
 }
 
 /**
@@ -130,7 +139,10 @@ export async function getGeminiSettings(): Promise<GeminiSettings> {
     model: 'gemini-2.5-pro',
     temperature: 1.0,
     streaming: true,
-    useSearch: false
+    useSearch: false,
+    showThoughts: true,
+    thinkingBudget: 8192,
+    thinkingLevel: 'HIGH'
   }
 }
 
