@@ -211,3 +211,58 @@ export async function deletePaper(paperId: number): Promise<void> {
 
   await db.conversations.where('paperId').equals(paperId).delete()
 }
+
+/**
+ * 删除对话及其消息
+ */
+export async function deleteConversation(conversationId: number): Promise<void> {
+  await db.messages.where('conversationId').equals(conversationId).delete()
+  await db.conversations.delete(conversationId)
+}
+
+/**
+ * 重命名对话
+ */
+export async function renameConversation(conversationId: number, newTitle: string): Promise<void> {
+  await db.conversations.update(conversationId, {
+    title: newTitle.trim(),
+    updatedAt: new Date()
+  })
+}
+
+/**
+ * 导出对话为Markdown
+ */
+export async function exportConversation(conversationId: number): Promise<string> {
+  const conversation = await db.conversations.get(conversationId)
+  if (!conversation) {
+    throw new Error('对话不存在')
+  }
+
+  const messages = await db.messages
+    .where('conversationId')
+    .equals(conversationId)
+    .sortBy('timestamp')
+
+  const lines: string[] = []
+  
+  lines.push(`# ${conversation.title}`)
+  lines.push('')
+  lines.push(`**创建时间**: ${conversation.createdAt.toLocaleString('zh-CN')}`)
+  lines.push(`**更新时间**: ${conversation.updatedAt.toLocaleString('zh-CN')}`)
+  lines.push('')
+  lines.push('---')
+  lines.push('')
+
+  for (const msg of messages) {
+    const role = msg.role === 'user' ? '👤 用户' : '🤖 助手'
+    const time = new Date(msg.timestamp).toLocaleString('zh-CN')
+    
+    lines.push(`## ${role} (${time})`)
+    lines.push('')
+    lines.push(msg.content)
+    lines.push('')
+  }
+
+  return lines.join('\n')
+}

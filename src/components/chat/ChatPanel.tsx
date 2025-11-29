@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm'
 import rehypeKatex from 'rehype-katex'
 import rehypeHighlight from 'rehype-highlight'
 import { useChat } from '../../hooks/useChat'
+import ConversationList from './ConversationList'
 
 // 导入样式
 import 'katex/dist/katex.min.css'
@@ -17,16 +18,35 @@ interface ChatPanelProps {
 export default function ChatPanel({ paperId }: ChatPanelProps) {
   const {
     messages,
+    conversations,
+    currentConversationId,
     loading,
     error,
     streamingText,
     sendMessage,
-    createNewConversation
+    createNewConversation,
+    setCurrentConversationId,
+    deleteConversation,
+    renameConversation,
+    exportConversation
   } = useChat(paperId)
 
   const [inputValue, setInputValue] = useState('')
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    const saved = localStorage.getItem('conversationListCollapsed')
+    return saved ? JSON.parse(saved) : false
+  })
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
+
+  // 持久化折叠状态
+  const toggleCollapse = () => {
+    setIsCollapsed((prev: boolean) => {
+      const newValue = !prev
+      localStorage.setItem('conversationListCollapsed', JSON.stringify(newValue))
+      return newValue
+    })
+  }
 
   // 自动滚动到最新消息
   useEffect(() => {
@@ -51,7 +71,22 @@ export default function ChatPanel({ paperId }: ChatPanelProps) {
   }
 
   return (
-    <div className="h-full flex flex-col bg-gray-50">
+    <div className="h-full flex bg-gray-50">
+      {/* 对话列表 */}
+      <ConversationList
+        conversations={conversations}
+        currentConversationId={currentConversationId}
+        onSelect={setCurrentConversationId}
+        onDelete={deleteConversation}
+        onRename={renameConversation}
+        onExport={exportConversation}
+        onNewConversation={createNewConversation}
+        isCollapsed={isCollapsed}
+        onToggleCollapse={toggleCollapse}
+      />
+
+      {/* 消息区域 */}
+      <div className="flex-1 flex flex-col">
       {/* 顶部工具栏 */}
       <div className="bg-white border-b p-4 flex items-center justify-between">
         <div className="flex items-center space-x-2">
@@ -60,14 +95,6 @@ export default function ChatPanel({ paperId }: ChatPanelProps) {
             Gemini
           </span>
         </div>
-
-        <button
-          onClick={createNewConversation}
-          className="text-sm bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
-          disabled={loading}
-        >
-          + 新对话
-        </button>
       </div>
 
       {/* 消息列表 */}
@@ -175,6 +202,7 @@ export default function ChatPanel({ paperId }: ChatPanelProps) {
             {loading ? '...' : '发送'}
           </button>
         </div>
+      </div>
       </div>
     </div>
   )

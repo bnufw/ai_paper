@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { db, type Message, type Conversation } from '../services/storage/db'
+import { db, type Message, type Conversation, deleteConversation as dbDeleteConversation, renameConversation as dbRenameConversation, exportConversation as dbExportConversation } from '../services/storage/db'
 import { sendMessageToGemini } from '../services/ai/geminiClient'
 
 /**
@@ -59,7 +59,7 @@ export function useChat(paperId: number) {
     const now = new Date()
     const convId = await db.conversations.add({
       paperId,
-      title: `对话 ${conversations.length + 1}`,
+      title: '新对话',
       createdAt: now,
       updatedAt: now
     })
@@ -74,6 +74,79 @@ export function useChat(paperId: number) {
       .reverse()
       .sortBy('createdAt')
     setConversations(convs)
+  }
+
+  /**
+   * 删除对话
+   */
+  const deleteConversation = async (conversationId: number) => {
+    try {
+      await dbDeleteConversation(conversationId)
+
+      // 刷新对话列表
+      const convs = await db.conversations
+        .where('paperId')
+        .equals(paperId)
+        .reverse()
+        .sortBy('createdAt')
+      setConversations(convs)
+
+      // 如果删除的是当前对话,切换到第一个对话或null
+      if (conversationId === currentConversationId) {
+        setCurrentConversationId(convs.length > 0 ? convs[0].id! : null)
+      }
+    } catch (err) {
+      console.error('删除对话失败:', err)
+      throw new Error('删除对话失败')
+    }
+  }
+
+  /**
+   * 重命名对话
+   */
+  const renameConversation = async (conversationId: number, newTitle: string) => {
+    if (!newTitle.trim()) {
+      throw new Error('标题不能为空')
+    }
+
+    try {
+      await dbRenameConversation(conversationId, newTitle)
+
+      // 刷新对话列表
+      const convs = await db.conversations
+        .where('paperId')
+        .equals(paperId)
+        .reverse()
+        .sortBy('createdAt')
+      setConversations(convs)
+    } catch (err) {
+      console.error('重命名对话失败:', err)
+      throw new Error('重命名对话失败')
+    }
+  }
+
+  /**
+   * 导出对话
+   */
+  const exportConversation = async (conversationId: number) => {
+    try {
+      const markdown = await dbExportConversation(conversationId)
+      const conversation = await db.conversations.get(conversationId)
+      
+      // 触发下载
+      const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${conversation?.title || '对话'}_${new Date().toISOString().split('T')[0]}.md`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('导出对话失败:', err)
+      throw new Error('导出对话失败')
+    }
   }
 
   /**
@@ -93,11 +166,23 @@ export function useChat(paperId: number) {
         const now = new Date()
         conversationId = await db.conversations.add({
           paperId,
-          title: content.substring(0, 30) + '...',
+          title: content.substring(0, 30).trim() + (content.length > 30 ? '...' : ''),
           createdAt: now,
           updatedAt: now
         })
         setCurrentConversationId(conversationId)
+      } else {
+        // 如果是对话的第一条消息,用它更新标题
+        const existingMessages = await db.messages
+          .where('conversationId')
+          .equals(conversationId)
+          .count()
+        
+        if (existingMessages === 0) {
+          await db.conversations.update(conversationId, {
+            title: content.substring(0, 30).trim() + (content.length > 30 ? '...' : '')
+          })
+        }
       }
 
       // 获取论文内容
@@ -182,6 +267,9 @@ export function useChat(paperId: number) {
     streamingText,
     sendMessage,
     createNewConversation,
-    setCurrentConversationId
+    setCurrentConversationId,
+    deleteConversation,
+    renameConversation,
+    exportConversation
   }
 }
