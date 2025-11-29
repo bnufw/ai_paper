@@ -1,6 +1,5 @@
 import { useState, useRef } from 'react'
-import { extractPDFAsImages } from '../../utils/pdfExtractor'
-import { convertImagesToMarkdown, renumberImageReferences } from '../../services/pdf/mistralOCR'
+import { convertPDFToMarkdown, renumberImageReferences } from '../../services/pdf/mistralOCR'
 import { createPaper } from '../../services/storage/db'
 
 interface PDFUploaderProps {
@@ -10,7 +9,7 @@ interface PDFUploaderProps {
 export default function PDFUploader({ onUploadComplete }: PDFUploaderProps) {
   const [file, setFile] = useState<File | null>(null)
   const [processing, setProcessing] = useState(false)
-  const [progress, setProgress] = useState({ current: 0, total: 0, stage: '' })
+  const [progress, setProgress] = useState({ stage: '', percent: 0 })
   const [error, setError] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -42,31 +41,25 @@ export default function PDFUploader({ onUploadComplete }: PDFUploaderProps) {
     setError('')
 
     try {
-      // 阶段1：提取PDF图片
-      setProgress({ current: 0, total: 0, stage: '正在提取PDF页面...' })
-
-      const images = await extractPDFAsImages(file, (current, total) => {
-        setProgress({ current, total, stage: `提取页面: ${current}/${total}` })
-      })
-
-      // 阶段2：OCR转换
-      setProgress({ current: 0, total: images.length, stage: '正在转换为Markdown...' })
-
-      let markdown = await convertImagesToMarkdown(images, (current, total) => {
-        setProgress({ current, total, stage: `转换中: ${current}/${total}页` })
-      })
+      // 使用新的 Mistral OCR API 直接处理 PDF
+      const { markdown: rawMarkdown, images } = await convertPDFToMarkdown(
+        file,
+        (stage, percent) => {
+          setProgress({ stage, percent: percent || 0 })
+        }
+      )
 
       // 重新编号图片引用
-      markdown = renumberImageReferences(markdown)
+      const markdown = renumberImageReferences(rawMarkdown)
 
-      // 阶段3：保存到数据库
-      setProgress({ current: 0, total: 0, stage: '正在保存...' })
+      // 保存到数据库
+      setProgress({ stage: '正在保存...', percent: 95 })
 
       const title = file.name.replace('.pdf', '')
       const paperId = await createPaper(title, markdown, images)
 
       // 完成
-      setProgress({ current: 0, total: 0, stage: '完成！' })
+      setProgress({ stage: '完成!', percent: 100 })
       setTimeout(() => {
         onUploadComplete(paperId)
       }, 500)
@@ -128,19 +121,15 @@ export default function PDFUploader({ onUploadComplete }: PDFUploaderProps) {
           <div className="mb-6">
             <div className="flex justify-between mb-2">
               <span className="text-sm text-gray-600">{progress.stage}</span>
-              {progress.total > 0 && (
-                <span className="text-sm text-gray-600">
-                  {Math.round((progress.current / progress.total) * 100)}%
-                </span>
-              )}
+              <span className="text-sm text-gray-600">
+                {Math.round(progress.percent)}%
+              </span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2">
               <div
                 className="bg-blue-600 h-2 rounded-full transition-all duration-300"
                 style={{
-                  width: progress.total > 0
-                    ? `${(progress.current / progress.total) * 100}%`
-                    : '0%'
+                  width: `${progress.percent}%`
                 }}
               />
             </div>
@@ -159,11 +148,11 @@ export default function PDFUploader({ onUploadComplete }: PDFUploaderProps) {
         {/* 提示信息 */}
         <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-md">
           <p className="text-sm text-blue-800">
-            <strong>💡 提示：</strong>
+            <strong>💡 提示:</strong>
             <br />
-            • 处理时间取决于PDF页数，通常每10页需要30-60秒
+            • 使用 Mistral 专用 OCR API,处理速度更快,识别质量更好
             <br />
-            • 请确保已在设置中配置Mistral API Key
+            • 请确保已在设置中配置 Mistral API Key
             <br />
             • 转换过程中请不要关闭页面
           </p>

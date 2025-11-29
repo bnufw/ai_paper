@@ -25,7 +25,7 @@
   - rehype-highlight (代码高亮)
   - remark-gfm (GitHub Flavored Markdown)
   - mermaid (流程图)
-- **PDF处理**：pdfjs-dist
+- **PDF处理**：Mistral OCR API (专用 OCR 端点)
 
 ## 📦 安装与运行
 
