@@ -56,7 +56,7 @@ function App() {
               </div>
 
               {/* Right: Chat Panel */}
-              <div className="w-1/2">
+              <div className="w-1/2 overflow-hidden">
                 <ChatPanel paperId={currentPaperId} />
               </div>
             </>
