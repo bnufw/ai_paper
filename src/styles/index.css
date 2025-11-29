@@ -2,6 +2,19 @@
 @tailwind components;
 @tailwind utilities;
 
+/* 禁用整体页面滚动 */
+@layer base {
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  #root {
+    height: 100%;
+  }
+}
+
 /* Markdown 内容增强样式 */
 @layer components {
   /* 论文查看器的 prose 样式优化 */
