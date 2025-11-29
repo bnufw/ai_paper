@@ -41,6 +41,18 @@ export default function PDFUploader({ onUploadComplete }: PDFUploaderProps) {
     setError('')
 
     try {
+      // 将 PDF 文件转为 base64
+      setProgress({ stage: '正在读取PDF...', percent: 5 })
+      const pdfData = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => {
+          const base64 = (reader.result as string).split(',')[1]
+          resolve(base64)
+        }
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
+
       // 使用新的 Mistral OCR API 直接处理 PDF
       const { markdown: rawMarkdown, images } = await convertPDFToMarkdown(
         file,
@@ -56,7 +68,7 @@ export default function PDFUploader({ onUploadComplete }: PDFUploaderProps) {
       setProgress({ stage: '正在保存...', percent: 95 })
 
       const title = file.name.replace('.pdf', '')
-      const paperId = await createPaper(title, markdown, images)
+      const paperId = await createPaper(title, markdown, images, pdfData)
 
       // 完成
       setProgress({ stage: '完成!', percent: 100 })

@@ -5,6 +5,7 @@ export interface Paper {
   id?: number
   title: string
   markdown: string
+  pdfData?: string  // base64编码的PDF文件
   createdAt: Date
   updatedAt: Date
 }
@@ -41,6 +42,14 @@ export interface Settings {
   value: string
 }
 
+// Gemini配置类型
+export interface GeminiSettings {
+  model: 'gemini-2.5-pro' | 'gemini-3-pro-preview'
+  temperature: number
+  streaming: boolean
+  useSearch: boolean
+}
+
 /**
  * 学术论文阅读器的IndexedDB数据库
  * 使用Dexie.js封装，提供类型安全的数据访问
@@ -57,7 +66,8 @@ class PaperReaderDatabase extends Dexie {
     super('PaperReaderDB')
 
     // 定义数据库schema
-    this.version(1).stores({
+    // v2: 添加 pdfData 字段
+    this.version(2).stores({
       // papers表：按创建时间索引
       papers: '++id, createdAt',
 
@@ -84,11 +94,10 @@ export const db = new PaperReaderDatabase()
 /**
  * 获取API密钥
  */
-export async function getAPIKey(provider: 'mistral' | 'gemini' | 'openai'): Promise<string | null> {
+export async function getAPIKey(provider: 'mistral' | 'gemini'): Promise<string | null> {
   const keyMap = {
     mistral: 'mistral_api_key',
-    gemini: 'gemini_api_key',
-    openai: 'openai_api_key'
+    gemini: 'gemini_api_key'
   }
 
   const setting = await db.settings.get(keyMap[provider])
@@ -98,14 +107,41 @@ export async function getAPIKey(provider: 'mistral' | 'gemini' | 'openai'): Prom
 /**
  * 保存API密钥
  */
-export async function saveAPIKey(provider: 'mistral' | 'gemini' | 'openai', value: string): Promise<void> {
+export async function saveAPIKey(provider: 'mistral' | 'gemini', value: string): Promise<void> {
   const keyMap = {
     mistral: 'mistral_api_key',
-    gemini: 'gemini_api_key',
-    openai: 'openai_api_key'
+    gemini: 'gemini_api_key'
   }
 
   await db.settings.put({ key: keyMap[provider], value })
+}
+
+/**
+ * 获取Gemini配置
+ */
+export async function getGeminiSettings(): Promise<GeminiSettings> {
+  const setting = await db.settings.get('gemini_settings')
+  if (setting?.value) {
+    return JSON.parse(setting.value)
+  }
+  
+  // 默认配置
+  return {
+    model: 'gemini-2.5-pro',
+    temperature: 1.0,
+    streaming: true,
+    useSearch: false
+  }
+}
+
+/**
+ * 保存Gemini配置
+ */
+export async function saveGeminiSettings(settings: GeminiSettings): Promise<void> {
+  await db.settings.put({ 
+    key: 'gemini_settings', 
+    value: JSON.stringify(settings) 
+  })
 }
 
 /**
@@ -125,13 +161,19 @@ export async function getPaperImages(paperId: number): Promise<PaperImage[]> {
 /**
  * 创建新论文
  */
-export async function createPaper(title: string, markdown: string, images: string[]): Promise<number> {
+export async function createPaper(
+  title: string,
+  markdown: string,
+  images: string[],
+  pdfData?: string
+): Promise<number> {
   const now = new Date()
 
   // 保存论文
   const paperId = await db.papers.add({
     title,
     markdown,
+    pdfData,
     createdAt: now,
     updatedAt: now
   })

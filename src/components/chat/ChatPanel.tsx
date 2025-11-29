@@ -19,25 +19,25 @@ export default function ChatPanel({ paperId }: ChatPanelProps) {
     messages,
     loading,
     error,
+    streamingText,
     sendMessage,
     createNewConversation
   } = useChat(paperId)
 
   const [inputValue, setInputValue] = useState('')
-  const [aiProvider, setAiProvider] = useState<'gemini' | 'openai'>('gemini')
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   // 自动滚动到最新消息
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  }, [messages, streamingText])
 
   const handleSend = async () => {
     if (!inputValue.trim() || loading) return
 
     const message = inputValue
     setInputValue('')
-    await sendMessage(message, aiProvider)
+    await sendMessage(message)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -53,17 +53,9 @@ export default function ChatPanel({ paperId }: ChatPanelProps) {
       <div className="bg-white border-b p-4 flex items-center justify-between">
         <div className="flex items-center space-x-2">
           <h3 className="font-semibold text-gray-800">AI 对话</h3>
-
-          {/* AI提供商选择 */}
-          <select
-            value={aiProvider}
-            onChange={(e) => setAiProvider(e.target.value as 'gemini' | 'openai')}
-            className="text-sm border border-gray-300 rounded px-2 py-1"
-            disabled={loading}
-          >
-            <option value="gemini">Gemini</option>
-            <option value="openai">OpenAI</option>
-          </select>
+          <span className="text-xs text-gray-500 bg-blue-100 px-2 py-1 rounded">
+            Gemini
+          </span>
         </div>
 
         <button
@@ -121,8 +113,24 @@ export default function ChatPanel({ paperId }: ChatPanelProps) {
           ))
         )}
 
+        {/* 流式输出显示 */}
+        {streamingText && (
+          <div className="flex justify-start">
+            <div className="max-w-[80%] bg-white text-gray-800 border border-gray-200 rounded-lg p-3">
+              <div className="prose prose-sm max-w-none">
+                <ReactMarkdown
+                  remarkPlugins={[remarkMath, remarkGfm]}
+                  rehypePlugins={[rehypeKatex, rehypeHighlight]}
+                >
+                  {streamingText}
+                </ReactMarkdown>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* 加载指示器 */}
-        {loading && (
+        {loading && !streamingText && (
           <div className="flex justify-start">
             <div className="bg-white border border-gray-200 rounded-lg p-3">
               <div className="flex space-x-2">

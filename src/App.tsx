@@ -3,7 +3,7 @@ import Header from './components/layout/Header'
 import Sidebar from './components/layout/Sidebar'
 import APIKeySettings from './components/settings/APIKeySettings'
 import PDFUploader from './components/pdf/PDFUploader'
-import MarkdownViewer from './components/markdown/MarkdownViewer'
+import PDFViewer from './components/pdf/PDFViewer'
 import ChatPanel from './components/chat/ChatPanel'
 
 function App() {
@@ -48,11 +48,11 @@ function App() {
               <PDFUploader onUploadComplete={handleUploadComplete} />
             </div>
           ) : currentPaperId ? (
-            /* Paper View: Split between Markdown and Chat */
+            /* Paper View: Split between PDF and Chat */
             <>
-              {/* Left: Markdown Viewer */}
+              {/* Left: PDF Viewer */}
               <div className="w-1/2 border-r">
-                <MarkdownViewer paperId={currentPaperId} />
+                <PDFViewer paperId={currentPaperId} />
               </div>
 
               {/* Right: Chat Panel */}

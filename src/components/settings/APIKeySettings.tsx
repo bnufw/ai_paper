@@ -1,50 +1,49 @@
 import { useState, useEffect } from 'react'
-import { getAPIKey, saveAPIKey } from '../../services/storage/db'
+import { getAPIKey, saveAPIKey, getGeminiSettings, saveGeminiSettings, GeminiSettings } from '../../services/storage/db'
 
 interface APIKeySettingsProps {
   onClose: () => void
 }
 
-/**
- * API密钥配置组件
- * 允许用户设置Mistral、Gemini和OpenAI的API密钥
- */
 export default function APIKeySettings({ onClose }: APIKeySettingsProps) {
   const [keys, setKeys] = useState({
     mistral: '',
-    gemini: '',
-    openai: ''
+    gemini: ''
   })
 
   const [showKeys, setShowKeys] = useState({
     mistral: false,
-    gemini: false,
-    openai: false
+    gemini: false
+  })
+
+  const [geminiSettings, setGeminiSettings] = useState<GeminiSettings>({
+    model: 'gemini-2.5-pro',
+    temperature: 1.0,
+    streaming: true,
+    useSearch: false
   })
 
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState('')
 
-  // 加载已保存的API密钥
   useEffect(() => {
-    async function loadKeys() {
-      const [mistral, gemini, openai] = await Promise.all([
+    async function loadSettings() {
+      const [mistral, gemini, settings] = await Promise.all([
         getAPIKey('mistral'),
         getAPIKey('gemini'),
-        getAPIKey('openai')
+        getGeminiSettings()
       ])
 
       setKeys({
         mistral: mistral || '',
-        gemini: gemini || '',
-        openai: openai || ''
+        gemini: gemini || ''
       })
+      setGeminiSettings(settings)
     }
 
-    loadKeys()
+    loadSettings()
   }, [])
 
-  // 保存API密钥
   const handleSave = async () => {
     setSaving(true)
     setSaveMessage('')
@@ -53,13 +52,13 @@ export default function APIKeySettings({ onClose }: APIKeySettingsProps) {
       await Promise.all([
         keys.mistral && saveAPIKey('mistral', keys.mistral),
         keys.gemini && saveAPIKey('gemini', keys.gemini),
-        keys.openai && saveAPIKey('openai', keys.openai)
+        saveGeminiSettings(geminiSettings)
       ])
 
-      setSaveMessage('✓ 保存成功！')
+      setSaveMessage('✓ 保存成功!')
       setTimeout(() => setSaveMessage(''), 2000)
     } catch (error) {
-      setSaveMessage('✗ 保存失败：' + (error as Error).message)
+      setSaveMessage('✗ 保存失败:' + (error as Error).message)
     } finally {
       setSaving(false)
     }
@@ -69,7 +68,7 @@ export default function APIKeySettings({ onClose }: APIKeySettingsProps) {
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-2xl">
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold text-gray-800">API密钥配置</h2>
+          <h2 className="text-2xl font-bold text-gray-800">API密钥与模型配置</h2>
           <button
             onClick={onClose}
             className="text-gray-500 hover:text-gray-700 text-2xl"
@@ -78,94 +77,151 @@ export default function APIKeySettings({ onClose }: APIKeySettingsProps) {
           </button>
         </div>
 
-        <div className="space-y-4">
-          {/* Mistral API Key */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Mistral API Key
-              <span className="text-gray-500 text-xs ml-2">(用于PDF OCR转换)</span>
-            </label>
-            <div className="relative">
-              <input
-                type={showKeys.mistral ? 'text' : 'password'}
-                value={keys.mistral}
-                onChange={(e) => setKeys({ ...keys, mistral: e.target.value })}
-                placeholder="sk-..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-              <button
-                type="button"
-                onClick={() => setShowKeys({ ...showKeys, mistral: !showKeys.mistral })}
-                className="absolute right-3 top-2.5 text-gray-500 hover:text-gray-700"
-              >
-                {showKeys.mistral ? '🙈' : '👁️'}
-              </button>
+        <div className="space-y-6">
+          <div className="border-b pb-4">
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">API密钥</h3>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Mistral API Key
+                <span className="text-gray-500 text-xs ml-2">(用于PDF OCR转换)</span>
+              </label>
+              <div className="relative">
+                <input
+                  type={showKeys.mistral ? 'text' : 'password'}
+                  value={keys.mistral}
+                  onChange={(e) => setKeys({ ...keys, mistral: e.target.value })}
+                  placeholder="sk-..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowKeys({ ...showKeys, mistral: !showKeys.mistral })}
+                  className="absolute right-3 top-2.5 text-gray-500 hover:text-gray-700"
+                >
+                  {showKeys.mistral ? '🙈' : '👁️'}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Google Gemini API Key
+                <span className="text-gray-500 text-xs ml-2">(用于AI对话)</span>
+              </label>
+              <div className="relative">
+                <input
+                  type={showKeys.gemini ? 'text' : 'password'}
+                  value={keys.gemini}
+                  onChange={(e) => setKeys({ ...keys, gemini: e.target.value })}
+                  placeholder="AI..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowKeys({ ...showKeys, gemini: !showKeys.gemini })}
+                  className="absolute right-3 top-2.5 text-gray-500 hover:text-gray-700"
+                >
+                  {showKeys.gemini ? '🙈' : '👁️'}
+                </button>
+              </div>
             </div>
           </div>
 
-          {/* Gemini API Key */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Google Gemini API Key
-              <span className="text-gray-500 text-xs ml-2">(用于AI对话)</span>
-            </label>
-            <div className="relative">
-              <input
-                type={showKeys.gemini ? 'text' : 'password'}
-                value={keys.gemini}
-                onChange={(e) => setKeys({ ...keys, gemini: e.target.value })}
-                placeholder="AI..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-              <button
-                type="button"
-                onClick={() => setShowKeys({ ...showKeys, gemini: !showKeys.gemini })}
-                className="absolute right-3 top-2.5 text-gray-500 hover:text-gray-700"
-              >
-                {showKeys.gemini ? '🙈' : '👁️'}
-              </button>
-            </div>
-          </div>
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">Gemini模型配置</h3>
 
-          {/* OpenAI API Key */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              OpenAI API Key
-              <span className="text-gray-500 text-xs ml-2">(用于AI对话)</span>
-            </label>
-            <div className="relative">
-              <input
-                type={showKeys.openai ? 'text' : 'password'}
-                value={keys.openai}
-                onChange={(e) => setKeys({ ...keys, openai: e.target.value })}
-                placeholder="sk-..."
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                模型选择
+              </label>
+              <select
+                value={geminiSettings.model}
+                onChange={(e) => setGeminiSettings({
+                  ...geminiSettings,
+                  model: e.target.value as 'gemini-2.5-pro' | 'gemini-3-pro-preview'
+                })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-              <button
-                type="button"
-                onClick={() => setShowKeys({ ...showKeys, openai: !showKeys.openai })}
-                className="absolute right-3 top-2.5 text-gray-500 hover:text-gray-700"
               >
-                {showKeys.openai ? '🙈' : '👁️'}
-              </button>
+                <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+                <option value="gemini-3-pro-preview">Gemini 3.0 Pro Preview</option>
+              </select>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                温度 (Temperature): {geminiSettings.temperature.toFixed(1)}
+                <span className="text-gray-500 text-xs ml-2">(控制输出随机性,0.0-2.0)</span>
+              </label>
+              <input
+                type="range"
+                min="0"
+                max="2"
+                step="0.1"
+                value={geminiSettings.temperature}
+                onChange={(e) => setGeminiSettings({
+                  ...geminiSettings,
+                  temperature: parseFloat(e.target.value)
+                })}
+                className="w-full"
+              />
+              <div className="flex justify-between text-xs text-gray-500 mt-1">
+                <span>更确定 (0.0)</span>
+                <span>平衡 (1.0)</span>
+                <span>更创造性 (2.0)</span>
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <label className="flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={geminiSettings.streaming}
+                  onChange={(e) => setGeminiSettings({
+                    ...geminiSettings,
+                    streaming: e.target.checked
+                  })}
+                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <span className="ml-2 text-sm font-medium text-gray-700">
+                  启用流式输出
+                  <span className="text-gray-500 text-xs ml-2">(实时显示AI回复)</span>
+                </span>
+              </label>
+            </div>
+
+            <div>
+              <label className="flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={geminiSettings.useSearch}
+                  onChange={(e) => setGeminiSettings({
+                    ...geminiSettings,
+                    useSearch: e.target.checked
+                  })}
+                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <span className="ml-2 text-sm font-medium text-gray-700">
+                  启用联网搜索
+                  <span className="text-gray-500 text-xs ml-2">(允许AI搜索最新信息)</span>
+                </span>
+              </label>
             </div>
           </div>
         </div>
 
-        {/* 安全提示 */}
         <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-md">
           <p className="text-sm text-yellow-800">
-            <strong>⚠️ 安全提示：</strong>
+            <strong>⚠️ 安全提示:</strong>
             <br />
-            • API密钥仅存储在您浏览器的本地数据库中，不会上传到任何服务器
+            • API密钥仅存储在您浏览器的本地数据库中,不会上传到任何服务器
             <br />
-            • 建议使用个人开发密钥，并在API提供商处设置使用限额
+            • 建议使用个人开发密钥,并在API提供商处设置使用限额
             <br />
             • 不要在公共或共享设备上保存密钥
           </p>
         </div>
 
-        {/* 保存按钮 */}
         <div className="mt-6 flex items-center justify-between">
           <div>
             {saveMessage && (
