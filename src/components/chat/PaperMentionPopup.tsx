@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useImperativeHandle, forwardRef } from 'react'
 import { db, type Paper } from '../../services/storage/db'
 
 interface PaperMentionPopupProps {
@@ -9,13 +9,17 @@ interface PaperMentionPopupProps {
   position: { top: number; left: number }
 }
 
-export default function PaperMentionPopup({
+export interface PaperMentionPopupRef {
+  handleKeyDown: (e: React.KeyboardEvent) => boolean
+}
+
+export default forwardRef<PaperMentionPopupRef, PaperMentionPopupProps>(function PaperMentionPopup({
   searchText,
   currentPaperId,
   onSelect,
   onClose,
   position
-}: PaperMentionPopupProps) {
+}, ref) {
   const [papers, setPapers] = useState<Paper[]>([])
   const [selectedIndex, setSelectedIndex] = useState(0)
   const popupRef = useRef<HTMLDivElement>(null)
@@ -24,10 +28,8 @@ export default function PaperMentionPopup({
     async function loadPapers() {
       const allPapers = await db.papers.orderBy('createdAt').reverse().toArray()
       
-      // 过滤掉当前论文
       let filtered = allPapers.filter(p => p.id !== currentPaperId)
       
-      // 如果有搜索文本,进行过滤
       if (searchText) {
         const query = searchText.toLowerCase()
         filtered = filtered.filter(p => p.title.toLowerCase().includes(query))
@@ -51,30 +53,42 @@ export default function PaperMentionPopup({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [onClose])
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      setSelectedIndex(prev => (prev < papers.length - 1 ? prev + 1 : prev))
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      setSelectedIndex(prev => (prev > 0 ? prev - 1 : prev))
-    } else if (e.key === 'Enter') {
-      e.preventDefault()
-      if (papers[selectedIndex]) {
-        onSelect(papers[selectedIndex])
+  // 暴露键盘处理方法给父组件
+  useImperativeHandle(ref, () => ({
+    handleKeyDown: (e: React.KeyboardEvent) => {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setSelectedIndex(prev => (prev < papers.length - 1 ? prev + 1 : prev))
+        return true
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setSelectedIndex(prev => (prev > 0 ? prev - 1 : prev))
+        return true
+      } else if (e.key === 'Enter') {
+        e.preventDefault()
+        if (papers[selectedIndex]) {
+          onSelect(papers[selectedIndex])
+        }
+        return true
+      } else if (e.key === 'Escape') {
+        e.preventDefault()
+        onClose()
+        return true
       }
-    } else if (e.key === 'Escape') {
-      e.preventDefault()
-      onClose()
+      return false
     }
-  }
+  }), [papers, selectedIndex, onSelect, onClose])
 
   if (papers.length === 0) {
     return (
       <div
         ref={popupRef}
-        className="absolute bg-white border border-gray-300 rounded-lg shadow-lg p-3 z-50 min-w-[300px]"
-        style={{ top: position.top, left: position.left }}
+        className="fixed bg-white border border-gray-300 rounded-lg shadow-lg p-3 z-50 min-w-[300px]"
+        style={{ 
+          top: position.top,
+          left: position.left,
+          transform: 'translateY(-100%) translateY(-8px)'
+        }}
       >
         <div className="text-sm text-gray-500">没有找到其他论文</div>
       </div>
@@ -84,10 +98,12 @@ export default function PaperMentionPopup({
   return (
     <div
       ref={popupRef}
-      className="absolute bg-white border border-gray-300 rounded-lg shadow-lg z-50 min-w-[300px] max-w-[500px]"
-      style={{ top: position.top, left: position.left }}
-      onKeyDown={handleKeyDown}
-      tabIndex={0}
+      className="fixed bg-white border border-gray-300 rounded-lg shadow-lg z-50 min-w-[300px] max-w-[500px]"
+      style={{ 
+        top: position.top,
+        left: position.left,
+        transform: 'translateY(-100%) translateY(-8px)'
+      }}
     >
       <div className="p-2 border-b border-gray-200 text-xs text-gray-500">
         选择要引用的论文 (↑↓选择, Enter确认, Esc取消)
@@ -112,4 +128,4 @@ export default function PaperMentionPopup({
       </div>
     </div>
   )
-}
+})

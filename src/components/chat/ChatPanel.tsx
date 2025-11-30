@@ -11,7 +11,7 @@ import ThinkingTimer from './ThinkingTimer'
 import ImageUploadButton from './ImageUploadButton'
 import ImagePreview from './ImagePreview'
 import ImageViewer from './ImageViewer'
-import PaperMentionPopup from './PaperMentionPopup'
+import PaperMentionPopup, { type PaperMentionPopupRef } from './PaperMentionPopup'
 import MessageContent from './MessageContent'
 
 // 导入样式
@@ -57,6 +57,7 @@ export default function ChatPanel({ paperId }: ChatPanelProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const mentionPopupRef = useRef<PaperMentionPopupRef>(null)
 
   // 加载模型配置
   useEffect(() => {
@@ -130,14 +131,14 @@ export default function ChatPanel({ paperId }: ChatPanelProps) {
     const match = textBeforeCursor.match(/@(\S*)$/)
 
     if (match && textareaRef.current) {
-      // 计算弹窗位置
+      // 计算弹窗位置 - 使用视口坐标（配合 fixed 定位）
       const rect = textareaRef.current.getBoundingClientRect()
       setMentionPopup({
         show: true,
         searchText: match[1],
         position: {
-          top: rect.bottom + window.scrollY,
-          left: rect.left + window.scrollX
+          top: rect.top,
+          left: rect.left
         }
       })
     } else {
@@ -172,7 +173,41 @@ export default function ChatPanel({ paperId }: ChatPanelProps) {
     }, 0)
   }
 
+  const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData.items
+    const imageFiles: File[] = []
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile()
+        if (file) {
+          imageFiles.push(file)
+        }
+      }
+    }
+
+    if (imageFiles.length > 0) {
+      e.preventDefault()
+      try {
+        const { compressImages } = await import('../../utils/imageCompressor')
+        const compressedImages = await compressImages(imageFiles, 4)
+        setPendingImages(prev => [...prev, ...compressedImages])
+      } catch (err) {
+        alert((err as Error).message)
+      }
+    }
+  }
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // 弹窗显示时，让弹窗处理键盘事件
+    if (mentionPopup && mentionPopupRef.current) {
+      const handled = mentionPopupRef.current.handleKeyDown(e)
+      if (handled) {
+        return
+      }
+    }
+    
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSend()
@@ -412,6 +447,7 @@ export default function ChatPanel({ paperId }: ChatPanelProps) {
               value={inputValue}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
               placeholder="输入您的问题... (Shift+Enter换行,Enter发送)"
               className="flex-1 border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
               rows={3}
@@ -441,6 +477,7 @@ export default function ChatPanel({ paperId }: ChatPanelProps) {
       {/* 论文引用选择器 */}
       {mentionPopup && (
         <PaperMentionPopup
+          ref={mentionPopupRef}
           searchText={mentionPopup.searchText}
           currentPaperId={paperId}
           onSelect={handlePaperSelect}
