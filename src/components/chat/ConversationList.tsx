@@ -95,8 +95,8 @@ export default function ConversationList({
       }`}
       onClick={handleCollapsedClick}
     >
-      {/* 新对话按钮 */}
-      <div className="px-4 py-2 border-r flex items-center">
+      {/* 新对话按钮和收起按钮 */}
+      <div className="px-4 py-2 border-r flex items-center space-x-2">
         <button
           onClick={onNewConversation}
           className="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-1 text-sm"
@@ -104,6 +104,21 @@ export default function ConversationList({
           <span>+</span>
           <span>新对话</span>
         </button>
+        
+        {!isCollapsed && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onToggleCollapse()
+            }}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            title="收起对话列表"
+          >
+            <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* 对话列表 - 横向滚动 */}
