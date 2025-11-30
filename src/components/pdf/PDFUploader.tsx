@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { convertPDFToMarkdown, renumberImageReferences, type OCRResult } from '../../services/pdf/mistralOCR'
+import { convertPDFToMarkdown, type OCRResult } from '../../services/pdf/mistralOCR'
 import { createPaper, getAllGroups, type PaperGroup } from '../../services/storage/db'
 import { savePaperToLocal } from '../../services/storage/paperStorage'
 import { getDirectoryHandle } from '../../services/storage/fileSystem'
@@ -69,8 +69,8 @@ export default function PDFUploader({ onUploadComplete }: PDFUploaderProps) {
         }
       )
 
-      // 重新编号图片引用
-      const markdown = renumberImageReferences(ocrResult.markdown)
+      // markdown 中的图片引用已在 OCR 处理时正确设置
+      const markdown = ocrResult.markdown
 
       // 保存到本地文件系统
       setProgress({ stage: '正在保存到本地...', percent: 90 })

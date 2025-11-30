@@ -12,12 +12,22 @@ function isCORSError(error: any): boolean {
 }
 
 /**
+ * 转义正则表达式特殊字符
+ */
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
  * Mistral OCR API 响应类型
  */
 interface MistralOCRResponse {
   pages: Array<{
     markdown: string
-    image?: string  // base64编码的图片
+    images: Array<{
+      id: string           // 图片ID，如 "img-0.png"
+      image_base64: string // base64编码的图片数据
+    }>
   }>
 }
 
@@ -138,17 +148,41 @@ export async function convertPDFToMarkdown(
 
     // 步骤4: 处理结果
     onProgress?.('处理识别结果...', 90)
-    const markdown = ocrResult.pages.map(page => page.markdown).join('\n\n---\n\n')
 
-    // 提取图片数据
+    // 提取所有图片，建立 id -> index 映射
     const images: Array<{ index: number; data: string }> = []
+    const imageIdToIndex: Record<string, number> = {}
     let imageIndex = 0
+
     for (const page of ocrResult.pages) {
-      if (page.image) {
-        images.push({ index: imageIndex, data: page.image })
-        imageIndex++
+      if (page.images && page.images.length > 0) {
+        for (const img of page.images) {
+          imageIdToIndex[img.id] = imageIndex
+          images.push({ index: imageIndex, data: img.image_base64 })
+          imageIndex++
+        }
       }
     }
+
+    // 处理每页 markdown，替换图片引用路径
+    const processedPages: string[] = []
+    for (const page of ocrResult.pages) {
+      let pageMarkdown = page.markdown
+
+      // 替换图片引用: ![img-0.png](img-0.png) -> ![img-0.png](images/image_0.png)
+      if (page.images && page.images.length > 0) {
+        for (const img of page.images) {
+          const idx = imageIdToIndex[img.id]
+          // 匹配 ![任意alt](图片id) 格式
+          const regex = new RegExp(`!\\[([^\\]]*)\\]\\(${escapeRegExp(img.id)}\\)`, 'g')
+          pageMarkdown = pageMarkdown.replace(regex, `![$1](images/image_${idx}.png)`)
+        }
+      }
+
+      processedPages.push(pageMarkdown)
+    }
+
+    const markdown = processedPages.join('\n\n---\n\n')
 
     onProgress?.('完成', 100)
 
@@ -359,14 +393,4 @@ export async function convertImagesToMarkdown(
     '此方法已废弃,请使用 convertPDFToMarkdown 直接处理 PDF 文件。\n' +
     '新的实现使用 Mistral 专用 OCR API,处理速度更快,识别质量更好。'
   )
-}
-
-/**
- * 重新编号Markdown中的图片引用
- */
-export function renumberImageReferences(markdown: string): string {
-  let imageIndex = 0
-  return markdown.replace(/!\[([^\]]*)\]\(image_\d+\.png\)/g, (_match, altText) => {
-    return `![${altText}](image_${imageIndex++}.png)`
-  })
 }
