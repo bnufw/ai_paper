@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { db, type Paper } from '../../services/storage/db'
+import { loadPDFFromLocal } from '../../services/storage/paperStorage'
 
 interface PDFViewerProps {
   paperId: number
@@ -28,34 +29,51 @@ export default function PDFViewer({ paperId }: PDFViewerProps) {
         console.log('论文数据:', {
           title: paperData.title,
           hasPdfData: !!paperData.pdfData,
-          pdfDataLength: paperData.pdfData?.length || 0
+          hasLocalPath: !!paperData.localPath,
+          localPath: paperData.localPath
         })
 
-        if (!paperData.pdfData) {
-          setError('PDF 文件不存在（可能是旧数据）')
-          setLoading(false)
-          return
-        }
+        let pdfArrayBuffer: ArrayBuffer
 
-        // 创建 Blob URL（更可靠的方式）
-        try {
-          const binaryString = atob(paperData.pdfData)
-          const bytes = new Uint8Array(binaryString.length)
-          for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i)
+        // 优先从本地文件系统读取
+        if (paperData.localPath) {
+          try {
+            pdfArrayBuffer = await loadPDFFromLocal(paperData.localPath)
+          } catch (err) {
+            console.error('从本地读取 PDF 失败:', err)
+            setError('无法读取本地 PDF 文件: ' + (err as Error).message)
+            setLoading(false)
+            return
           }
-          const blob = new Blob([bytes], { type: 'application/pdf' })
-          const url = URL.createObjectURL(blob)
-
-          console.log('PDF Blob URL 创建成功:', url)
-          setPdfUrl(url)
-        } catch (err) {
-          console.error('创建 PDF Blob 失败:', err)
-          setError('PDF 数据格式错误')
+        } 
+        // 兼容旧数据：从 DB 读取
+        else if (paperData.pdfData) {
+          try {
+            const binaryString = atob(paperData.pdfData)
+            const bytes = new Uint8Array(binaryString.length)
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i)
+            }
+            pdfArrayBuffer = bytes.buffer
+          } catch (err) {
+            console.error('解析 PDF base64 失败:', err)
+            setError('PDF 数据格式错误')
+            setLoading(false)
+            return
+          }
+        } 
+        else {
+          setError('PDF 文件不存在')
           setLoading(false)
           return
         }
 
+        // 创建 Blob URL
+        const blob = new Blob([pdfArrayBuffer], { type: 'application/pdf' })
+        const url = URL.createObjectURL(blob)
+
+        console.log('PDF Blob URL 创建成功:', url)
+        setPdfUrl(url)
         setPaper(paperData)
         setLoading(false)
       } catch (err) {

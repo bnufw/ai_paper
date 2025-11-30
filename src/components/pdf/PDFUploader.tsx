@@ -1,6 +1,8 @@
-import { useState, useRef } from 'react'
-import { convertPDFToMarkdown, renumberImageReferences } from '../../services/pdf/mistralOCR'
-import { createPaper } from '../../services/storage/db'
+import { useState, useRef, useEffect } from 'react'
+import { convertPDFToMarkdown, renumberImageReferences, type OCRResult } from '../../services/pdf/mistralOCR'
+import { createPaper, getAllGroups, type PaperGroup } from '../../services/storage/db'
+import { savePaperToLocal } from '../../services/storage/paperStorage'
+import { getDirectoryHandle } from '../../services/storage/fileSystem'
 
 interface PDFUploaderProps {
   onUploadComplete: (paperId: number) => void
@@ -11,7 +13,19 @@ export default function PDFUploader({ onUploadComplete }: PDFUploaderProps) {
   const [processing, setProcessing] = useState(false)
   const [progress, setProgress] = useState({ stage: '', percent: 0 })
   const [error, setError] = useState('')
+  const [groups, setGroups] = useState<PaperGroup[]>([])
+  const [selectedGroupId, setSelectedGroupId] = useState<number | undefined>(undefined)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // 加载分组列表
+  useEffect(() => {
+    loadGroups()
+  }, [])
+
+  const loadGroups = async () => {
+    const allGroups = await getAllGroups()
+    setGroups(allGroups)
+  }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0]
@@ -41,20 +55,14 @@ export default function PDFUploader({ onUploadComplete }: PDFUploaderProps) {
     setError('')
 
     try {
-      // 将 PDF 文件转为 base64
-      setProgress({ stage: '正在读取PDF...', percent: 5 })
-      const pdfData = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = () => {
-          const base64 = (reader.result as string).split(',')[1]
-          resolve(base64)
-        }
-        reader.onerror = reject
-        reader.readAsDataURL(file)
-      })
+      // 检查是否配置了存储目录
+      const rootHandle = await getDirectoryHandle()
+      if (!rootHandle) {
+        throw new Error('未配置存储目录,请先在设置中选择存储位置')
+      }
 
-      // 使用新的 Mistral OCR API 直接处理 PDF
-      const { markdown: rawMarkdown, images } = await convertPDFToMarkdown(
+      // 使用 Mistral OCR API 直接处理 PDF
+      const ocrResult: OCRResult = await convertPDFToMarkdown(
         file,
         (stage, percent) => {
           setProgress({ stage, percent: percent || 0 })
@@ -62,13 +70,33 @@ export default function PDFUploader({ onUploadComplete }: PDFUploaderProps) {
       )
 
       // 重新编号图片引用
-      const markdown = renumberImageReferences(rawMarkdown)
+      const markdown = renumberImageReferences(ocrResult.markdown)
 
-      // 保存到数据库
-      setProgress({ stage: '正在保存...', percent: 95 })
+      // 保存到本地文件系统
+      setProgress({ stage: '正在保存到本地...', percent: 90 })
 
       const title = file.name.replace('.pdf', '')
-      const paperId = await createPaper(title, markdown, images, pdfData)
+      const selectedGroup = groups.find(g => g.id === selectedGroupId)
+      const groupName = selectedGroup?.name || '未分类'
+
+      const localPath = await savePaperToLocal(
+        groupName,
+        title,
+        file,
+        markdown,
+        ocrResult.images
+      )
+
+      // 保存元数据到数据库
+      setProgress({ stage: '正在保存元数据...', percent: 95 })
+      const paperId = await createPaper(
+        title,
+        markdown,
+        [],
+        undefined,
+        selectedGroupId,
+        localPath
+      )
 
       // 完成
       setProgress({ stage: '完成!', percent: 100 })
@@ -120,6 +148,27 @@ export default function PDFUploader({ onUploadComplete }: PDFUploaderProps) {
             )}
           </div>
         </div>
+
+        {/* 分组选择 */}
+        {file && (
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              选择分组
+            </label>
+            <select
+              value={selectedGroupId || ''}
+              onChange={(e) => setSelectedGroupId(e.target.value ? Number(e.target.value) : undefined)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">未分类</option>
+              {groups.map(group => (
+                <option key={group.id} value={group.id}>
+                  {group.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* 错误提示 */}
         {error && (

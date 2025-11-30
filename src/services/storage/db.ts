@@ -1,16 +1,25 @@
 import Dexie, { Table } from 'dexie'
 
+// 论文分组类型
+export interface PaperGroup {
+  id?: number
+  name: string
+  createdAt: Date
+}
+
 // 论文类型
 export interface Paper {
   id?: number
   title: string
-  markdown: string
-  pdfData?: string  // base64编码的PDF文件
+  markdown: string        // 纯文本 Markdown（不含图片 base64）
+  groupId?: number        // 所属分组 ID
+  localPath?: string      // 本地文件夹路径（相对于根目录）
+  pdfData?: string        // base64编码的PDF文件（废弃，迁移后删除）
   createdAt: Date
   updatedAt: Date
 }
 
-// 论文图片类型
+// 论文图片类型（废弃，迁移后删除）
 export interface PaperImage {
   id?: number
   paperId: number
@@ -65,6 +74,7 @@ export interface GeminiSettings {
  */
 class PaperReaderDatabase extends Dexie {
   // 声明表结构
+  groups!: Table<PaperGroup, number>
   papers!: Table<Paper, number>
   images!: Table<PaperImage, number>
   conversations!: Table<Conversation, number>
@@ -74,22 +84,22 @@ class PaperReaderDatabase extends Dexie {
   constructor() {
     super('PaperReaderDB')
 
-    // 定义数据库schema
     // v2: 添加 pdfData 字段
     this.version(2).stores({
-      // papers表：按创建时间索引
       papers: '++id, createdAt',
-
-      // images表：按论文ID和图片序号索引
       images: '++id, paperId, imageIndex',
-
-      // conversations表：按论文ID和创建时间索引
       conversations: '++id, paperId, createdAt',
-
-      // messages表：按对话ID和时间戳索引
       messages: '++id, conversationId, timestamp',
+      settings: 'key'
+    })
 
-      // settings表：key作为主键
+    // v3: 添加分组功能和本地存储路径
+    this.version(3).stores({
+      groups: '++id, createdAt',
+      papers: '++id, groupId, createdAt',
+      images: '++id, paperId, imageIndex',
+      conversations: '++id, paperId, createdAt',
+      messages: '++id, conversationId, timestamp',
       settings: 'key'
     })
   }
@@ -171,13 +181,15 @@ export async function getPaperImages(paperId: number): Promise<PaperImage[]> {
 }
 
 /**
- * 创建新论文
+ * 创建新论文（新版本 - 支持分组和本地存储）
  */
 export async function createPaper(
   title: string,
   markdown: string,
   images: string[],
-  pdfData?: string
+  pdfData?: string,
+  groupId?: number,
+  localPath?: string
 ): Promise<number> {
   const now = new Date()
 
@@ -186,12 +198,14 @@ export async function createPaper(
     title,
     markdown,
     pdfData,
+    groupId,
+    localPath,
     createdAt: now,
     updatedAt: now
   })
 
-  // 保存图片
-  if (images.length > 0) {
+  // 仅在没有本地路径时保存图片到 DB（兼容旧数据）
+  if (!localPath && images.length > 0) {
     const imageRecords = images.map((imageData, index) => ({
       paperId,
       imageData,
@@ -277,4 +291,73 @@ export async function exportConversation(conversationId: number): Promise<string
   }
 
   return lines.join('\n')
+}
+
+// ========== 分组管理函数 ==========
+
+/**
+ * 创建分组
+ */
+export async function createGroup(name: string): Promise<number> {
+  return await db.groups.add({
+    name: name.trim(),
+    createdAt: new Date()
+  })
+}
+
+/**
+ * 重命名分组
+ */
+export async function renameGroup(id: number, newName: string): Promise<void> {
+  await db.groups.update(id, { name: newName.trim() })
+}
+
+/**
+ * 删除分组（论文移至未分类）
+ */
+export async function deleteGroup(id: number): Promise<void> {
+  await db.papers.where('groupId').equals(id).modify({ groupId: undefined })
+  await db.groups.delete(id)
+}
+
+/**
+ * 获取所有分组
+ */
+export async function getAllGroups(): Promise<PaperGroup[]> {
+  return db.groups.orderBy('createdAt').toArray()
+}
+
+/**
+ * 移动论文到分组
+ */
+export async function movePaperToGroup(paperId: number, groupId?: number): Promise<void> {
+  await db.papers.update(paperId, { 
+    groupId,
+    updatedAt: new Date()
+  })
+}
+
+/**
+ * 按分组获取论文
+ */
+export async function getPapersByGroup(groupId?: number): Promise<Paper[]> {
+  if (groupId === undefined) {
+    return db.papers.filter(p => !p.groupId).reverse().sortBy('createdAt')
+  }
+  return db.papers.where('groupId').equals(groupId).reverse().sortBy('createdAt')
+}
+
+/**
+ * 获取存储目录路径
+ */
+export async function getStorageRootPath(): Promise<string | null> {
+  const setting = await db.settings.get('storage_root_path')
+  return setting?.value || null
+}
+
+/**
+ * 保存存储目录路径
+ */
+export async function saveStorageRootPath(path: string): Promise<void> {
+  await db.settings.put({ key: 'storage_root_path', value: path })
 }

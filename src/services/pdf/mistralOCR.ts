@@ -42,6 +42,53 @@ interface SignedUrlResponse {
 }
 
 /**
+ * 验证 Mistral API Key 是否有效
+ * @param apiKey API 密钥
+ * @returns 是否有效
+ */
+async function validateAPIKey(apiKey: string): Promise<{ valid: boolean; error?: string }> {
+  try {
+    const response = await fetch('https://api.mistral.ai/v1/models', {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Accept': 'application/json'
+      }
+    })
+
+    if (response.status === 401) {
+      const errorData = await response.json().catch(() => ({}))
+      return { 
+        valid: false, 
+        error: `API Key无效: ${errorData.message || '认证失败'}` 
+      }
+    }
+
+    if (!response.ok) {
+      return { 
+        valid: false, 
+        error: `验证失败 (${response.status}): ${response.statusText}` 
+      }
+    }
+
+    return { valid: true }
+  } catch (error) {
+    return { 
+      valid: false, 
+      error: `网络错误: ${(error as Error).message}` 
+    }
+  }
+}
+
+/**
+ * OCR 转换结果
+ */
+export interface OCRResult {
+  markdown: string
+  images: Array<{ index: number; data: string }>  // base64 图片数据
+}
+
+/**
  * 使用 Mistral OCR API 将 PDF 转换为 Markdown
  * @param pdfFile PDF 文件对象
  * @param onProgress 进度回调
@@ -50,7 +97,7 @@ interface SignedUrlResponse {
 export async function convertPDFToMarkdown(
   pdfFile: File,
   onProgress?: (stage: string, progress?: number) => void
-): Promise<{ markdown: string; images: string[] }> {
+): Promise<OCRResult> {
   const apiKey = await getAPIKey('mistral')
 
   if (!apiKey) {
@@ -62,9 +109,23 @@ export async function convertPDFToMarkdown(
     throw new Error('Mistral API Key 格式不正确,请检查配置')
   }
 
+  // 验证 API Key 有效性
+  onProgress?.('验证API Key...', 0)
+  const validation = await validateAPIKey(apiKey)
+  if (!validation.valid) {
+    throw new Error(
+      `API Key验证失败\n\n` +
+      `${validation.error}\n\n` +
+      `请检查:\n` +
+      `1. 访问 https://console.mistral.ai/ 确认API Key\n` +
+      `2. 确保API Key有效且未过期\n` +
+      `3. 确认账户有足够的配额`
+    )
+  }
+
   try {
     // 步骤1: 上传 PDF 文件
-    onProgress?.('上传 PDF 文件...', 0)
+    onProgress?.('上传 PDF 文件...', 10)
     const fileId = await uploadPDFFile(pdfFile, apiKey)
 
     // 步骤2: 获取签名 URL
@@ -78,9 +139,16 @@ export async function convertPDFToMarkdown(
     // 步骤4: 处理结果
     onProgress?.('处理识别结果...', 90)
     const markdown = ocrResult.pages.map(page => page.markdown).join('\n\n---\n\n')
-    const images = ocrResult.pages
-      .map(page => page.image)
-      .filter((img): img is string => !!img)
+
+    // 提取图片数据
+    const images: Array<{ index: number; data: string }> = []
+    let imageIndex = 0
+    for (const page of ocrResult.pages) {
+      if (page.image) {
+        images.push({ index: imageIndex, data: page.image })
+        imageIndex++
+      }
+    }
 
     onProgress?.('完成', 100)
 
@@ -123,6 +191,20 @@ async function uploadPDFFile(file: File, apiKey: string): Promise<string> {
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}))
+    
+    // 针对401错误提供详细信息
+    if (response.status === 401) {
+      throw new Error(
+        `API认证失败 (401): Mistral API Key无效或已过期\n\n` +
+        `请检查:\n` +
+        `1. API Key是否正确配置(当前长度: ${apiKey.length}字符)\n` +
+        `2. API Key是否以"sk-"或正确格式开头\n` +
+        `3. API Key是否在Mistral控制台有效\n` +
+        `4. 账户是否有足够的配额\n\n` +
+        `详细错误: ${errorData.message || response.statusText}`
+      )
+    }
+    
     throw new Error(
       `文件上传失败 (${response.status}): ${errorData.message || response.statusText}`
     )
@@ -151,6 +233,17 @@ async function getSignedUrl(fileId: string, apiKey: string): Promise<string> {
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}))
+    
+    if (response.status === 401) {
+      throw new Error(
+        `API认证失败 (401): 无法访问已上传的文件\n\n` +
+        `可能原因:\n` +
+        `1. API Key权限不足\n` +
+        `2. API Key在文件上传后失效\n\n` +
+        `详细错误: ${errorData.message || response.statusText}`
+      )
+    }
+    
     throw new Error(
       `获取文件URL失败 (${response.status}): ${errorData.message || response.statusText}`
     )
@@ -185,6 +278,18 @@ async function processOCR(documentUrl: string, apiKey: string): Promise<MistralO
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}))
+    
+    if (response.status === 401) {
+      throw new Error(
+        `API认证失败 (401): OCR服务访问被拒绝\n\n` +
+        `可能原因:\n` +
+        `1. API Key没有OCR服务权限\n` +
+        `2. 账户OCR配额已用完\n` +
+        `3. OCR服务未启用\n\n` +
+        `详细错误: ${errorData.message || response.statusText}`
+      )
+    }
+    
     throw new Error(
       `OCR处理失败 (${response.status}): ${errorData.message || response.statusText}`
     )

@@ -1,16 +1,30 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Sidebar from './components/layout/Sidebar'
 import ResizablePanel from './components/layout/ResizablePanel'
 import APIKeySettings from './components/settings/APIKeySettings'
+import StorageSetupDialog from './components/settings/StorageSetupDialog'
 import PDFUploader from './components/pdf/PDFUploader'
 import PDFViewer from './components/pdf/PDFViewer'
 import ChatPanel from './components/chat/ChatPanel'
+import { getDirectoryHandle } from './services/storage/fileSystem'
 
 function App() {
   const [showSettings, setShowSettings] = useState(false)
+  const [showStorageSetup, setShowStorageSetup] = useState(false)
   const [currentPaperId, setCurrentPaperId] = useState<number | null>(null)
   const [showUploader, setShowUploader] = useState(true)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+
+  // 检查是否需要显示首次引导
+  useEffect(() => {
+    async function checkStorageSetup() {
+      const handle = await getDirectoryHandle()
+      if (!handle) {
+        setShowStorageSetup(true)
+      }
+    }
+    checkStorageSetup()
+  }, [])
 
   const handlePaperSelect = (paperId: number) => {
     setCurrentPaperId(paperId)
@@ -83,6 +97,11 @@ function App() {
       {/* Settings Modal */}
       {showSettings && (
         <APIKeySettings onClose={() => setShowSettings(false)} />
+      )}
+
+      {/* Storage Setup Dialog */}
+      {showStorageSetup && (
+        <StorageSetupDialog onComplete={() => setShowStorageSetup(false)} />
       )}
     </div>
   )

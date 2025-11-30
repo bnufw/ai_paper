@@ -1,5 +1,16 @@
 import { useEffect, useState } from 'react'
-import { getAllPapers, deletePaper, type Paper } from '../../services/storage/db'
+import { 
+  getAllPapers, 
+  deletePaper, 
+  getAllGroups,
+  createGroup,
+  renameGroup,
+  deleteGroup,
+  type Paper,
+  type PaperGroup
+} from '../../services/storage/db'
+import { deletePaperFromLocal } from '../../services/storage/paperStorage'
+import GroupList from './GroupList'
 
 interface SidebarProps {
   currentPaperId: number | null
@@ -19,35 +30,70 @@ export default function Sidebar({
   onToggleCollapse 
 }: SidebarProps) {
   const [papers, setPapers] = useState<Paper[]>([])
+  const [groups, setGroups] = useState<PaperGroup[]>([])
   const [loading, setLoading] = useState(true)
 
-  // 加载论文列表
-  const loadPapers = async () => {
+  // 加载论文和分组列表
+  const loadData = async () => {
     setLoading(true)
-    const allPapers = await getAllPapers()
+    const [allPapers, allGroups] = await Promise.all([
+      getAllPapers(),
+      getAllGroups()
+    ])
     setPapers(allPapers)
+    setGroups(allGroups)
     setLoading(false)
   }
 
   useEffect(() => {
-    loadPapers()
+    loadData()
   }, [])
 
   // 删除论文
-  const handleDelete = async (paperId: number, e: React.MouseEvent) => {
-    e.stopPropagation() // 阻止触发选择事件
-
+  const handleDelete = async (paperId: number) => {
     if (!confirm('确定要删除这篇论文吗？此操作不可恢复。')) {
       return
     }
 
+    const paper = papers.find(p => p.id === paperId)
+    
+    // 删除本地文件
+    if (paper?.localPath) {
+      try {
+        await deletePaperFromLocal(paper.localPath)
+      } catch (err) {
+        console.error('删除本地文件失败:', err)
+      }
+    }
+
     await deletePaper(paperId)
-    await loadPapers()
+    await loadData()
 
     // 如果删除的是当前论文，清空选择
     if (paperId === currentPaperId) {
       onNewPaper()
     }
+  }
+
+  // 创建新分组
+  const handleCreateGroup = async () => {
+    const name = prompt('请输入分组名称:')
+    if (!name || !name.trim()) return
+
+    await createGroup(name.trim())
+    await loadData()
+  }
+
+  // 重命名分组
+  const handleRenameGroup = async (groupId: number, newName: string) => {
+    await renameGroup(groupId, newName)
+    await loadData()
+  }
+
+  // 删除分组
+  const handleDeleteGroup = async (groupId: number) => {
+    await deleteGroup(groupId)
+    await loadData()
   }
 
   return (
@@ -101,9 +147,8 @@ export default function Sidebar({
           ))}
         </div>
       ) : (
-        /* 展开视图：显示完整列表 */
-        <div className="flex-1 overflow-y-auto">
-        {loading ? (
+        /* 展开视图：显示分组列表 */
+        loading ? (
           <div className="p-4 text-center text-gray-400">
             加载中...
           </div>
@@ -113,41 +158,17 @@ export default function Sidebar({
             <p className="text-sm">点击上方按钮上传</p>
           </div>
         ) : (
-          <div className="p-2 space-y-1">
-            {papers.map((paper) => (
-              <div
-                key={paper.id}
-                onClick={() => onSelectPaper(paper.id!)}
-                className={`p-3 rounded-lg cursor-pointer transition-colors group ${
-                  currentPaperId === paper.id
-                    ? 'bg-blue-600'
-                    : 'hover:bg-gray-700'
-                }`}
-              >
-                <div className="flex justify-between items-start">
-                  <div className="flex-1 min-w-0">
-                    <h4 className="font-medium truncate mb-1">
-                      {paper.title}
-                    </h4>
-                    <p className="text-xs text-gray-400">
-                      {new Date(paper.createdAt).toLocaleDateString('zh-CN')}
-                    </p>
-                  </div>
-
-                  {/* 删除按钮 */}
-                  <button
-                    onClick={(e) => handleDelete(paper.id!, e)}
-                    className="ml-2 opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 transition-opacity"
-                    title="删除"
-                  >
-                    🗑️
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+          <GroupList
+            groups={groups}
+            papers={papers}
+            currentPaperId={currentPaperId}
+            onSelectPaper={onSelectPaper}
+            onDeletePaper={handleDelete}
+            onCreateGroup={handleCreateGroup}
+            onRenameGroup={handleRenameGroup}
+            onDeleteGroup={handleDeleteGroup}
+          />
+        )
       )}
 
       {/* 底部：设置和统计信息 */}

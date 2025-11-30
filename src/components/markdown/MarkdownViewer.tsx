@@ -5,7 +5,8 @@ import remarkGfm from 'remark-gfm'
 import rehypeKatex from 'rehype-katex'
 import rehypeHighlight from 'rehype-highlight'
 import MermaidChart from './MermaidChart'
-import { db, type Paper, type PaperImage } from '../../services/storage/db'
+import { db, type Paper, getPaperImages } from '../../services/storage/db'
+import { loadAllImagesFromLocal } from '../../services/storage/paperStorage'
 
 // 导入样式
 import 'katex/dist/katex.min.css'
@@ -17,29 +18,36 @@ interface MarkdownViewerProps {
 
 export default function MarkdownViewer({ paperId }: MarkdownViewerProps) {
   const [paper, setPaper] = useState<Paper | null>(null)
-  const [images, setImages] = useState<Record<number, string>>({})
+  const [images, setImages] = useState<Map<number, string>>(new Map())
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function loadPaper() {
       setLoading(true)
 
-      // 加载论文
       const paperData = await db.papers.get(paperId)
       if (!paperData) {
         setLoading(false)
         return
       }
 
-      // 加载图片
-      const imageData = await db.images.where('paperId').equals(paperId).toArray()
-      const imageMap: Record<number, string> = {}
-      imageData.forEach((img: PaperImage) => {
-        imageMap[img.imageIndex] = img.imageData
-      })
-
       setPaper(paperData)
-      setImages(imageMap)
+
+      // 加载图片数据
+      if (paperData.localPath) {
+        // 新版本：从本地文件系统读取
+        const localImages = await loadAllImagesFromLocal(paperData.localPath)
+        setImages(localImages)
+      } else {
+        // 兼容旧版本：从 IndexedDB 读取
+        const dbImages = await getPaperImages(paperId)
+        const imageMap = new Map<number, string>()
+        for (const img of dbImages) {
+          imageMap.set(img.imageIndex, img.imageData)
+        }
+        setImages(imageMap)
+      }
+
       setLoading(false)
     }
 
@@ -76,29 +84,26 @@ export default function MarkdownViewer({ paperId }: MarkdownViewerProps) {
             remarkPlugins={[remarkMath, remarkGfm]}
             rehypePlugins={[rehypeKatex, rehypeHighlight]}
             components={{
-              // 自定义图片渲染
-              img: ({ src, alt }) => {
-                // 匹配 image_N.png 格式
+              // 自定义图片渲染（将 image_N.png 映射到实际数据）
+              img: ({ src, alt, ...props }) => {
                 const match = src?.match(/image_(\d+)\.png/)
                 if (match) {
-                  const imageIndex = parseInt(match[1])
-                  const base64 = images[imageIndex]
-
-                  if (base64) {
+                  const idx = parseInt(match[1])
+                  const imageData = images.get(idx)
+                  if (imageData) {
                     return (
                       <img
-                        src={`data:image/jpeg;base64,${base64}`}
-                        alt={alt || `图片 ${imageIndex}`}
+                        src={imageData}
+                        alt={alt || `图片 ${idx}`}
                         className="max-w-full h-auto rounded-lg shadow-md my-4"
+                        {...props}
                       />
                     )
                   }
                 }
-
-                // 如果不是本地图片，直接显示
-                return <img src={src} alt={alt} className="max-w-full h-auto" />
+                // 非本地图片或未找到数据，使用原始 src
+                return <img src={src} alt={alt} className="max-w-full h-auto" {...props} />
               },
-
               // 自定义代码块渲染（处理Mermaid图表）
               code: ({ className, children, ...props }) => {
                 const match = /language-(\w+)/.exec(className || '')

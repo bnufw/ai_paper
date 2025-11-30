@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { getAPIKey, saveAPIKey, getGeminiSettings, saveGeminiSettings, GeminiSettings } from '../../services/storage/db'
+import { getAPIKey, saveAPIKey, getGeminiSettings, saveGeminiSettings, GeminiSettings, getStorageRootPath, saveStorageRootPath } from '../../services/storage/db'
+import { requestDirectoryAccess, getDirectoryHandle, getDirectoryPath, isFileSystemSupported } from '../../services/storage/fileSystem'
 
 interface APIKeySettingsProps {
   onClose: () => void
@@ -28,13 +29,16 @@ export default function APIKeySettings({ onClose }: APIKeySettingsProps) {
 
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState('')
+  const [storagePath, setStoragePath] = useState<string | null>(null)
+  const [changingStorage, setChangingStorage] = useState(false)
 
   useEffect(() => {
     async function loadSettings() {
-      const [mistral, gemini, settings] = await Promise.all([
+      const [mistral, gemini, settings, rootPath] = await Promise.all([
         getAPIKey('mistral'),
         getAPIKey('gemini'),
-        getGeminiSettings()
+        getGeminiSettings(),
+        getStorageRootPath()
       ])
 
       setKeys({
@@ -42,6 +46,17 @@ export default function APIKeySettings({ onClose }: APIKeySettingsProps) {
         gemini: gemini || ''
       })
       setGeminiSettings(settings)
+      setStoragePath(rootPath)
+
+      // 如果有保存的路径，尝试恢复目录句柄
+      if (!rootPath) {
+        const handle = await getDirectoryHandle()
+        if (handle) {
+          const path = await getDirectoryPath(handle)
+          setStoragePath(path)
+          await saveStorageRootPath(path)
+        }
+      }
     }
 
     loadSettings()
@@ -68,6 +83,28 @@ export default function APIKeySettings({ onClose }: APIKeySettingsProps) {
     }
   }
 
+  // 选择/更换存储目录
+  const handleChangeStorage = async () => {
+    if (!isFileSystemSupported()) {
+      alert('当前浏览器不支持文件系统访问，请使用 Chrome 或 Edge 浏览器')
+      return
+    }
+
+    setChangingStorage(true)
+    try {
+      const handle = await requestDirectoryAccess()
+      const path = await getDirectoryPath(handle)
+      setStoragePath(path)
+      await saveStorageRootPath(path)
+    } catch (error) {
+      if ((error as Error).name !== 'AbortError') {
+        alert('设置存储目录失败:' + (error as Error).message)
+      }
+    } finally {
+      setChangingStorage(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -82,6 +119,54 @@ export default function APIKeySettings({ onClose }: APIKeySettingsProps) {
         </div>
 
         <div className="space-y-6">
+          {/* 存储目录配置 */}
+          <div className="border-b pb-4">
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">本地存储配置</h3>
+            
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                存储目录
+                <span className="text-gray-500 text-xs ml-2">(论文和图片保存位置)</span>
+              </label>
+              
+              {storagePath ? (
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 px-3 py-2 bg-gray-50 border border-gray-300 rounded-md text-sm text-gray-700">
+                    📁 {storagePath}
+                  </div>
+                  <button
+                    onClick={handleChangeStorage}
+                    disabled={changingStorage}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-blue-300 text-sm"
+                  >
+                    {changingStorage ? '选择中...' : '更换'}
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  <button
+                    onClick={handleChangeStorage}
+                    disabled={changingStorage}
+                    className="w-full px-4 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-blue-300"
+                  >
+                    {changingStorage ? '选择中...' : '选择存储目录'}
+                  </button>
+                  <p className="text-xs text-gray-500 mt-2">
+                    首次使用需要选择一个目录来存储论文文件
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {!isFileSystemSupported() && (
+              <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                <p className="text-sm text-yellow-800">
+                  ⚠️ 当前浏览器不支持文件系统访问，请使用 Chrome 或 Edge 浏览器
+                </p>
+              </div>
+            )}
+          </div>
+
           <div className="border-b pb-4">
             <h3 className="text-lg font-semibold text-gray-800 mb-4">API密钥</h3>
 
