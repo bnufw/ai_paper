@@ -36,6 +36,14 @@ export interface Conversation {
   updatedAt: Date
 }
 
+// 消息图片类型
+export interface MessageImage {
+  data: string       // base64编码的图片数据
+  mimeType: string   // 'image/jpeg' | 'image/png' | 'image/webp'
+  width?: number
+  height?: number
+}
+
 // 消息类型
 export interface Message {
   id?: number
@@ -43,6 +51,7 @@ export interface Message {
   role: 'user' | 'assistant'
   content: string
   timestamp: Date
+  images?: MessageImage[]
   thoughts?: string
   thinkingTimeMs?: number
   generationStartTime?: Date
@@ -95,6 +104,16 @@ class PaperReaderDatabase extends Dexie {
 
     // v3: 添加分组功能和本地存储路径
     this.version(3).stores({
+      groups: '++id, createdAt',
+      papers: '++id, groupId, createdAt',
+      images: '++id, paperId, imageIndex',
+      conversations: '++id, paperId, createdAt',
+      messages: '++id, conversationId, timestamp',
+      settings: 'key'
+    })
+
+    // v4: 消息支持图片(无需迁移,新字段为可选)
+    this.version(4).stores({
       groups: '++id, createdAt',
       papers: '++id, groupId, createdAt',
       images: '++id, paperId, imageIndex',
@@ -360,4 +379,49 @@ export async function getStorageRootPath(): Promise<string | null> {
  */
 export async function saveStorageRootPath(path: string): Promise<void> {
   await db.settings.put({ key: 'storage_root_path', value: path })
+}
+
+/**
+ * 获取论文的paper.md内容
+ * 优先从本地文件读取,回退到数据库markdown字段
+ */
+export async function getPaperMarkdown(paperId: number): Promise<string> {
+  const paper = await db.papers.get(paperId)
+  if (!paper) {
+    throw new Error('论文不存在')
+  }
+
+  // 优先从本地文件读取
+  if (paper.localPath) {
+    const rootPath = await getStorageRootPath()
+    if (rootPath) {
+      try {
+        const paperMdPath = `${rootPath}/${paper.localPath}/paper.md`
+        // 使用File System Access API读取文件
+        const response = await fetch(paperMdPath)
+        if (response.ok) {
+          let content = await response.text()
+          
+          // 大文件截断(超过50KB取前50KB)
+          const MAX_SIZE = 50 * 1024
+          if (content.length > MAX_SIZE) {
+            content = content.substring(0, MAX_SIZE) + '\n\n[... 内容过长,已截断 ...]'
+          }
+          
+          return content
+        }
+      } catch (err) {
+        console.warn('无法从本地读取paper.md,回退到数据库:', err)
+      }
+    }
+  }
+
+  // 回退到数据库
+  let markdown = paper.markdown
+  const MAX_SIZE = 50 * 1024
+  if (markdown.length > MAX_SIZE) {
+    markdown = markdown.substring(0, MAX_SIZE) + '\n\n[... 内容过长,已截断 ...]'
+  }
+  
+  return markdown
 }

@@ -5,9 +5,14 @@ import remarkGfm from 'remark-gfm'
 import rehypeKatex from 'rehype-katex'
 import rehypeHighlight from 'rehype-highlight'
 import { useChat } from '../../hooks/useChat'
-import { getGeminiSettings } from '../../services/storage/db'
+import { getGeminiSettings, type MessageImage, type Paper } from '../../services/storage/db'
 import ConversationList from './ConversationList'
 import ThinkingTimer from './ThinkingTimer'
+import ImageUploadButton from './ImageUploadButton'
+import ImagePreview from './ImagePreview'
+import ImageViewer from './ImageViewer'
+import PaperMentionPopup from './PaperMentionPopup'
+import MessageContent from './MessageContent'
 
 // 导入样式
 import 'katex/dist/katex.min.css'
@@ -36,6 +41,14 @@ export default function ChatPanel({ paperId }: ChatPanelProps) {
   } = useChat(paperId)
 
   const [inputValue, setInputValue] = useState('')
+  const [pendingImages, setPendingImages] = useState<MessageImage[]>([])
+  const [viewerImages, setViewerImages] = useState<MessageImage[] | null>(null)
+  const [viewerInitialIndex, setViewerInitialIndex] = useState(0)
+  const [mentionPopup, setMentionPopup] = useState<{
+    show: boolean
+    searchText: string
+    position: { top: number; left: number }
+  } | null>(null)
   const [isCollapsed, setIsCollapsed] = useState(() => {
     const saved = localStorage.getItem('conversationListCollapsed')
     return saved ? JSON.parse(saved) : false
@@ -43,6 +56,7 @@ export default function ChatPanel({ paperId }: ChatPanelProps) {
   const [modelName, setModelName] = useState('Gemini')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // 加载模型配置
   useEffect(() => {
@@ -80,11 +94,82 @@ export default function ChatPanel({ paperId }: ChatPanelProps) {
   }, [messages, streamingText])
 
   const handleSend = async () => {
-    if (!inputValue.trim() || loading) return
+    if ((!inputValue.trim() && pendingImages.length === 0) || loading) return
 
     const message = inputValue
+    const images = pendingImages
     setInputValue('')
-    await sendMessage(message)
+    setPendingImages([])
+    await sendMessage(message, images)
+  }
+
+  const handleImagesSelected = (images: MessageImage[]) => {
+    setPendingImages(prev => [...prev, ...images])
+  }
+
+  const handleRemoveImage = (index: number) => {
+    setPendingImages(prev => prev.filter((_, i) => i !== index))
+  }
+
+  const handleImageClick = (images: MessageImage[], index: number) => {
+    setViewerImages(images)
+    setViewerInitialIndex(index)
+  }
+
+  const handleCloseViewer = () => {
+    setViewerImages(null)
+  }
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value
+    setInputValue(value)
+
+    // 检测@符号触发
+    const cursorPos = e.target.selectionStart
+    const textBeforeCursor = value.substring(0, cursorPos)
+    const match = textBeforeCursor.match(/@(\S*)$/)
+
+    if (match && textareaRef.current) {
+      // 计算弹窗位置
+      const rect = textareaRef.current.getBoundingClientRect()
+      setMentionPopup({
+        show: true,
+        searchText: match[1],
+        position: {
+          top: rect.bottom + window.scrollY,
+          left: rect.left + window.scrollX
+        }
+      })
+    } else {
+      setMentionPopup(null)
+    }
+  }
+
+  const handlePaperSelect = (paper: Paper) => {
+    if (!textareaRef.current) return
+
+    const cursorPos = textareaRef.current.selectionStart
+    const textBeforeCursor = inputValue.substring(0, cursorPos)
+    const textAfterCursor = inputValue.substring(cursorPos)
+    
+    // 找到@符号位置
+    const atMatch = textBeforeCursor.match(/@(\S*)$/)
+    if (!atMatch) return
+
+    const atPos = cursorPos - atMatch[0].length
+    const mention = `@[${paper.title}](paperId:${paper.id})`
+    
+    // 替换文本
+    const newValue = inputValue.substring(0, atPos) + mention + textAfterCursor
+    setInputValue(newValue)
+    setMentionPopup(null)
+
+    // 恢复焦点
+    setTimeout(() => {
+      textareaRef.current?.focus()
+      const newCursorPos = atPos + mention.length
+      textareaRef.current?.setSelectionRange(newCursorPos, newCursorPos)
+    }, 0)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -143,9 +228,23 @@ export default function ChatPanel({ paperId }: ChatPanelProps) {
                 }`}
               >
                 {msg.role === 'user' ? (
-                  <div className="whitespace-pre-wrap break-words">
-                    {msg.content}
-                  </div>
+                  <>
+                    {/* 用户消息图片 */}
+                    {msg.images && msg.images.length > 0 && (
+                      <div className="flex gap-2 flex-wrap mb-2">
+                        {msg.images.map((img, imgIdx) => (
+                          <img
+                            key={imgIdx}
+                            src={`data:${img.mimeType};base64,${img.data}`}
+                            alt={`图片 ${imgIdx + 1}`}
+                            className="max-w-xs max-h-48 object-contain rounded cursor-pointer hover:opacity-90 transition-opacity"
+                            onClick={() => handleImageClick(msg.images!, imgIdx)}
+                          />
+                        ))}
+                      </div>
+                    )}
+                    <MessageContent content={msg.content} />
+                  </>
                 ) : (
                   <>
                     {/* 搜索查询链接 */}
@@ -296,26 +395,59 @@ export default function ChatPanel({ paperId }: ChatPanelProps) {
 
       {/* 输入框 */}
       <div className="bg-white border-t p-4">
-        <div className="flex space-x-2">
-          <textarea
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="输入您的问题... (Shift+Enter换行,Enter发送)"
-            className="flex-1 border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
-            rows={3}
-            disabled={loading}
-          />
-          <button
-            onClick={handleSend}
-            disabled={!inputValue.trim() || loading}
-            className="px-6 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
-          >
-            {loading ? '...' : '发送'}
-          </button>
+        <div className="flex flex-col gap-2">
+          {/* 图片预览 */}
+          <ImagePreview images={pendingImages} onRemove={handleRemoveImage} />
+          
+          <div className="flex space-x-2">
+            {/* 图片上传按钮 */}
+            <ImageUploadButton
+              onImagesSelected={handleImagesSelected}
+              disabled={loading}
+              maxCount={4}
+            />
+            
+            <textarea
+              ref={textareaRef}
+              value={inputValue}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              placeholder="输入您的问题... (Shift+Enter换行,Enter发送)"
+              className="flex-1 border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+              rows={3}
+              disabled={loading}
+            />
+            <button
+              onClick={handleSend}
+              disabled={(!inputValue.trim() && pendingImages.length === 0) || loading}
+              className="px-6 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+            >
+              {loading ? '...' : '发送'}
+            </button>
+          </div>
         </div>
       </div>
       </div>
+
+      {/* 图片查看器 */}
+      {viewerImages && (
+        <ImageViewer
+          images={viewerImages}
+          initialIndex={viewerInitialIndex}
+          onClose={handleCloseViewer}
+        />
+      )}
+
+      {/* 论文引用选择器 */}
+      {mentionPopup && (
+        <PaperMentionPopup
+          searchText={mentionPopup.searchText}
+          currentPaperId={paperId}
+          onSelect={handlePaperSelect}
+          onClose={() => setMentionPopup(null)}
+          position={mentionPopup.position}
+        />
+      )}
     </div>
   )
 }

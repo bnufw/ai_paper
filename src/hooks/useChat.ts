@@ -1,6 +1,27 @@
 import { useState, useEffect } from 'react'
-import { db, type Message, type Conversation, deleteConversation as dbDeleteConversation, renameConversation as dbRenameConversation, exportConversation as dbExportConversation } from '../services/storage/db'
+import { db, type Message, type Conversation, type MessageImage, deleteConversation as dbDeleteConversation, renameConversation as dbRenameConversation, exportConversation as dbExportConversation, getPaperMarkdown } from '../services/storage/db'
 import { sendMessageToGemini } from '../services/ai/geminiClient'
+
+// 引用解析正则
+const MENTION_PATTERN = /@\[([^\]]+)\]\(paperId:(\d+)\)/g
+
+/**
+ * 解析消息中的论文引用
+ */
+function parseMentions(content: string): { paperId: number; title: string }[] {
+  const mentions: { paperId: number; title: string }[] = []
+  let match
+  const regex = new RegExp(MENTION_PATTERN)
+  
+  while ((match = regex.exec(content)) !== null) {
+    mentions.push({
+      title: match[1],
+      paperId: parseInt(match[2])
+    })
+  }
+  
+  return mentions
+}
 
 /**
  * AI对话Hook
@@ -154,8 +175,8 @@ export function useChat(paperId: number) {
   /**
    * 发送消息
    */
-  const sendMessage = async (content: string) => {
-    if (!content.trim()) return
+  const sendMessage = async (content: string, images?: MessageImage[]) => {
+    if (!content.trim() && (!images || images.length === 0)) return
 
     setLoading(true)
     setError('')
@@ -195,12 +216,40 @@ export function useChat(paperId: number) {
         throw new Error('论文不存在')
       }
 
+      // 解析引用
+      const mentions = parseMentions(content)
+      
+      // 检查引用数量限制
+      if (mentions.length > 3) {
+        throw new Error('单条消息最多引用3篇论文')
+      }
+
+      // 构建包含引用的上下文
+      let contextWithMentions = paper.markdown
+      
+      if (mentions.length > 0) {
+        const mentionContents = await Promise.all(
+          mentions.map(async (m) => {
+            try {
+              const markdown = await getPaperMarkdown(m.paperId)
+              return `\n\n[引用论文: ${m.title}]\n${markdown}\n[/引用论文]\n`
+            } catch (err) {
+              console.error(`读取引用论文失败 (ID: ${m.paperId}):`, err)
+              return `\n\n[引用论文: ${m.title}]\n[无法读取论文内容]\n[/引用论文]\n`
+            }
+          })
+        )
+        
+        contextWithMentions = paper.markdown + mentionContents.join('')
+      }
+
       // 先保存用户消息
       const userTimestamp = new Date()
       await db.messages.add({
         conversationId,
         role: 'user',
         content,
+        images,
         timestamp: userTimestamp
       })
 
@@ -220,9 +269,10 @@ export function useChat(paperId: number) {
 
       // 调用AI (支持流式输出)
       const result = await sendMessageToGemini(
-        paper.markdown, 
+        contextWithMentions,
         content, 
         history,
+        images,
         (text) => {
           // 流式输出回调
           setStreamingText(text)

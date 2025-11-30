@@ -1,11 +1,12 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
-import { getAPIKey, getGeminiSettings } from '../storage/db'
+import { getAPIKey, getGeminiSettings, type MessageImage } from '../storage/db'
 
 /**
  * 使用Gemini API进行对话
  * @param paperContext 论文内容作为上下文
  * @param userMessage 用户消息
  * @param history 对话历史
+ * @param images 用户上传的图片(可选)
  * @param onStream 流式输出回调
  * @param onThought 思考过程回调
  * @param onGenerationStart 生成开始回调
@@ -15,6 +16,7 @@ export async function sendMessageToGemini(
   paperContext: string,
   userMessage: string,
   history: { role: 'user' | 'assistant'; content: string }[],
+  images?: MessageImage[],
   onStream?: (text: string) => void,
   onThought?: (thought: string) => void,
   onGenerationStart?: (startTime: Date) => void
@@ -97,6 +99,26 @@ export async function sendMessageToGemini(
     generationConfig
   })
 
+  // 构建用户消息parts(支持多模态)
+  const userParts: any[] = []
+  
+  // 添加文本内容
+  if (userMessage.trim()) {
+    userParts.push({ text: userMessage })
+  }
+  
+  // 添加图片内容
+  if (images && images.length > 0) {
+    for (const img of images) {
+      userParts.push({
+        inlineData: {
+          mimeType: img.mimeType,
+          data: img.data
+        }
+      })
+    }
+  }
+
   let thoughts = ''
   let thinkingEndTime: number | undefined
   let generationStartTime: Date | undefined
@@ -106,7 +128,7 @@ export async function sendMessageToGemini(
 
   // 流式输出
   if (settings.streaming && onStream) {
-    const result = await chat.sendMessageStream(userMessage)
+    const result = await chat.sendMessageStream(userParts)
     let fullText = ''
     
     // 标记生成开始
@@ -176,7 +198,7 @@ export async function sendMessageToGemini(
       onGenerationStart(generationStartTime)
     }
     
-    const result = await chat.sendMessage(userMessage)
+    const result = await chat.sendMessage(userParts)
     
     generationEndTime = new Date()
     

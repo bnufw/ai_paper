@@ -6,7 +6,7 @@ import StorageSetupDialog from './components/settings/StorageSetupDialog'
 import PDFUploader from './components/pdf/PDFUploader'
 import PDFViewer from './components/pdf/PDFViewer'
 import ChatPanel from './components/chat/ChatPanel'
-import { getDirectoryHandle } from './services/storage/fileSystem'
+import { getDirectoryHandle, checkDirectoryPermission } from './services/storage/fileSystem'
 
 function App() {
   const [showSettings, setShowSettings] = useState(false)
@@ -18,8 +18,21 @@ function App() {
   // 检查是否需要显示首次引导
   useEffect(() => {
     async function checkStorageSetup() {
-      const handle = await getDirectoryHandle()
-      if (!handle) {
+      try {
+        const handle = await getDirectoryHandle()
+        if (!handle) {
+          setShowStorageSetup(true)
+          return
+        }
+        
+        // 验证目录权限是否仍然有效
+        const hasPermission = await checkDirectoryPermission(handle)
+        if (!hasPermission) {
+          console.warn('目录访问权限已失效,需要重新授权')
+          setShowStorageSetup(true)
+        }
+      } catch (error) {
+        console.error('检查存储设置失败:', error)
         setShowStorageSetup(true)
       }
     }
