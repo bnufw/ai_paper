@@ -52,6 +52,15 @@ export default function ChatPanel({ paperId }: ChatPanelProps) {
       setModelName(displayName)
     }
     loadModelName()
+
+    // 监听设置变更事件
+    const handleSettingsChange = () => {
+      loadModelName()
+    }
+    window.addEventListener('gemini-settings-changed', handleSettingsChange)
+    return () => {
+      window.removeEventListener('gemini-settings-changed', handleSettingsChange)
+    }
   }, [])
 
   // 持久化折叠状态
