@@ -104,7 +104,7 @@ export default function PDFViewer({ paperId }: PDFViewerProps) {
       {/* PDF 显示区域 - 占满整个空间 */}
       {pdfUrl ? (
         <iframe
-          src={pdfUrl}
+          src={`${pdfUrl}#toolbar=0`}
           className="w-full h-full border-0"
           title={paper.title}
         />
