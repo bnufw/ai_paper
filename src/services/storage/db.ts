@@ -312,6 +312,38 @@ export async function exportConversation(conversationId: number): Promise<string
   return lines.join('\n')
 }
 
+/**
+ * 更新消息内容
+ */
+export async function updateMessage(messageId: number, content: string, images?: MessageImage[]): Promise<void> {
+  await db.messages.update(messageId, {
+    content,
+    images,
+    timestamp: new Date()
+  })
+}
+
+/**
+ * 删除指定消息之后的所有消息(包括该消息)
+ */
+export async function deleteMessagesAfter(conversationId: number, messageId: number): Promise<void> {
+  const message = await db.messages.get(messageId)
+  if (!message) {
+    throw new Error('消息不存在')
+  }
+
+  const allMessages = await db.messages
+    .where('conversationId')
+    .equals(conversationId)
+    .sortBy('timestamp')
+
+  const messageIndex = allMessages.findIndex(m => m.id === messageId)
+  if (messageIndex === -1) return
+
+  const messagesToDelete = allMessages.slice(messageIndex)
+  await db.messages.bulkDelete(messagesToDelete.map(m => m.id!))
+}
+
 // ========== 分组管理函数 ==========
 
 /**

@@ -32,7 +32,10 @@ export default function ChatPanel({ paperId }: ChatPanelProps) {
     streamingText,
     streamingThought,
     streamingStartTime,
+    editingMessageId,
     sendMessage,
+    editMessage,
+    cancelEdit,
     createNewConversation,
     setCurrentConversationId,
     deleteConversation,
@@ -101,7 +104,25 @@ export default function ChatPanel({ paperId }: ChatPanelProps) {
     const images = pendingImages
     setInputValue('')
     setPendingImages([])
-    await sendMessage(message, images)
+    
+    // 如果是编辑模式,传入编辑的消息ID
+    await sendMessage(message, images, editingMessageId || undefined)
+  }
+
+  const handleEditMessage = (messageId: number) => {
+    const editData = editMessage(messageId)
+    if (editData) {
+      setInputValue(editData.content)
+      setPendingImages(editData.images)
+      // 聚焦输入框
+      setTimeout(() => textareaRef.current?.focus(), 0)
+    }
+  }
+
+  const handleCancelEdit = () => {
+    cancelEdit()
+    setInputValue('')
+    setPendingImages([])
   }
 
   const handleImagesSelected = (images: MessageImage[]) => {
@@ -279,6 +300,19 @@ export default function ChatPanel({ paperId }: ChatPanelProps) {
                       </div>
                     )}
                     <MessageContent content={msg.content} />
+                    
+                    {/* 编辑按钮 */}
+                    {!loading && (
+                      <div className="mt-2 flex gap-2">
+                        <button
+                          onClick={() => handleEditMessage(msg.id!)}
+                          className="text-xs text-blue-100 hover:text-white transition-colors"
+                          title="编辑消息"
+                        >
+                          ✏️ 编辑
+                        </button>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <>
@@ -431,6 +465,22 @@ export default function ChatPanel({ paperId }: ChatPanelProps) {
       {/* 输入框 */}
       <div className="bg-white border-t p-4">
         <div className="flex flex-col gap-2">
+          {/* 编辑提示 */}
+          {editingMessageId && (
+            <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+              <div className="flex items-center gap-2 text-sm text-blue-800">
+                <span>✏️</span>
+                <span>编辑消息中 - 发送后将重新生成回复</span>
+              </div>
+              <button
+                onClick={handleCancelEdit}
+                className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+              >
+                取消
+              </button>
+            </div>
+          )}
+          
           {/* 图片预览 */}
           <ImagePreview images={pendingImages} onRemove={handleRemoveImage} />
           

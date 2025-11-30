@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { db, type Message, type Conversation, type MessageImage, deleteConversation as dbDeleteConversation, renameConversation as dbRenameConversation, exportConversation as dbExportConversation, getPaperMarkdown } from '../services/storage/db'
+import { db, type Message, type Conversation, type MessageImage, deleteConversation as dbDeleteConversation, renameConversation as dbRenameConversation, exportConversation as dbExportConversation, getPaperMarkdown, deleteMessagesAfter } from '../services/storage/db'
 import { sendMessageToGemini } from '../services/ai/geminiClient'
 
 // 引用解析正则
@@ -35,6 +35,7 @@ export function useChat(paperId: number) {
   const [streamingText, setStreamingText] = useState('')
   const [streamingThought, setStreamingThought] = useState('')
   const [streamingStartTime, setStreamingStartTime] = useState<Date | null>(null)
+  const [editingMessageId, setEditingMessageId] = useState<number | null>(null)
 
   // 加载对话列表
   useEffect(() => {
@@ -175,7 +176,7 @@ export function useChat(paperId: number) {
   /**
    * 发送消息
    */
-  const sendMessage = async (content: string, images?: MessageImage[]) => {
+  const sendMessage = async (content: string, images?: MessageImage[], editingId?: number) => {
     if (!content.trim() && (!images || images.length === 0)) return
 
     setLoading(true)
@@ -243,25 +244,37 @@ export function useChat(paperId: number) {
         contextWithMentions = paper.markdown + mentionContents.join('')
       }
 
-      // 先保存用户消息
+      // 先保存用户消息（编辑模式下延迟保存）
       const userTimestamp = new Date()
-      await db.messages.add({
-        conversationId,
-        role: 'user',
-        content,
-        images,
-        timestamp: userTimestamp
-      })
+      if (!editingId) {
+        await db.messages.add({
+          conversationId,
+          role: 'user',
+          content,
+          images,
+          timestamp: userTimestamp
+        })
+      }
 
       // 刷新消息列表显示用户消息
       let updatedMessages = await db.messages
         .where('conversationId')
         .equals(conversationId)
         .sortBy('timestamp')
+      
+      // 编辑模式下，构建历史时排除被编辑消息及之后的内容
+      let messagesForHistory = updatedMessages
+      if (editingId) {
+        const editIndex = updatedMessages.findIndex(m => m.id === editingId)
+        if (editIndex !== -1) {
+          messagesForHistory = updatedMessages.slice(0, editIndex)
+        }
+      }
+      
       setMessages(updatedMessages)
 
       // 构建历史消息（只保留最近10轮）
-      const recentMessages = messages.slice(-20)
+      const recentMessages = messagesForHistory.slice(-20)
       const history = recentMessages.map(msg => ({
         role: msg.role,
         content: msg.content
@@ -292,6 +305,19 @@ export function useChat(paperId: number) {
       setStreamingThought('')
       setStreamingStartTime(null)
 
+      // AI调用成功后，如果是编辑模式，先删除旧消息再保存新消息
+      if (editingId) {
+        await deleteMessagesAfter(conversationId, editingId)
+        // 编辑模式下保存新用户消息
+        await db.messages.add({
+          conversationId,
+          role: 'user',
+          content,
+          images,
+          timestamp: userTimestamp
+        })
+      }
+
       // 保存AI回复
       await db.messages.add({
         conversationId,
@@ -319,6 +345,11 @@ export function useChat(paperId: number) {
 
       setMessages(updatedMessages)
 
+      // 清除编辑状态
+      if (editingId) {
+        setEditingMessageId(null)
+      }
+
     } catch (err) {
       console.error('发送消息失败:', err)
       setError((err as Error).message)
@@ -330,6 +361,28 @@ export function useChat(paperId: number) {
     }
   }
 
+  /**
+   * 编辑消息
+   */
+  const editMessage = (messageId: number) => {
+    const message = messages.find(m => m.id === messageId)
+    if (message && message.role === 'user') {
+      setEditingMessageId(messageId)
+      return {
+        content: message.content,
+        images: message.images || []
+      }
+    }
+    return null
+  }
+
+  /**
+   * 取消编辑
+   */
+  const cancelEdit = () => {
+    setEditingMessageId(null)
+  }
+
   return {
     messages,
     conversations,
@@ -339,7 +392,10 @@ export function useChat(paperId: number) {
     streamingText,
     streamingThought,
     streamingStartTime,
+    editingMessageId,
     sendMessage,
+    editMessage,
+    cancelEdit,
     createNewConversation,
     setCurrentConversationId,
     deleteConversation,
