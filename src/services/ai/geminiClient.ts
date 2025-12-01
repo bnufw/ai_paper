@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import { GoogleGenerativeAI, GoogleGenerativeAIFetchError } from '@google/generative-ai'
 import { getAPIKey, getGeminiSettings, type MessageImage } from '../storage/db'
 
 /**
@@ -126,122 +126,133 @@ export async function sendMessageToGemini(
   let groundingMetadata: any = undefined
   let webSearchQueries: string[] = []
 
-  // 流式输出
-  if (settings.streaming && onStream) {
-    const result = await chat.sendMessageStream(userParts)
-    let fullText = ''
-    
-    // 标记生成开始
-    generationStartTime = new Date()
-    if (onGenerationStart) {
-      onGenerationStart(generationStartTime)
-    }
-    
-    for await (const chunk of result.stream) {
-      // 处理候选内容
-      const candidate = chunk.candidates?.[0]
+  try {
+    // 流式输出
+    if (settings.streaming && onStream) {
+      const result = await chat.sendMessageStream(userParts)
+      let fullText = ''
       
-      if (candidate) {
-        // 提取grounding元数据
-        if (candidate.groundingMetadata) {
-          groundingMetadata = candidate.groundingMetadata
-          
-          // 提取搜索查询
-          if (groundingMetadata.webSearchQueries) {
-            webSearchQueries = groundingMetadata.webSearchQueries
+      // 标记生成开始
+      generationStartTime = new Date()
+      if (onGenerationStart) {
+        onGenerationStart(generationStartTime)
+      }
+      
+      for await (const chunk of result.stream) {
+        // 处理候选内容
+        const candidate = chunk.candidates?.[0]
+        
+        if (candidate) {
+          // 提取grounding元数据
+          if (candidate.groundingMetadata) {
+            groundingMetadata = candidate.groundingMetadata
+            
+            // 提取搜索查询
+            if (groundingMetadata.webSearchQueries) {
+              webSearchQueries = groundingMetadata.webSearchQueries
+            }
           }
-        }
 
-        // 处理内容parts
-        if (candidate.content?.parts) {
-          for (const part of candidate.content.parts) {
-            // @ts-ignore - 检查是否为思考内容
-            if (part.thought) {
-              thoughts += part.text || ''
-              if (onThought) {
-                onThought(thoughts)
+          // 处理内容parts
+          if (candidate.content?.parts) {
+            for (const part of candidate.content.parts) {
+              // @ts-ignore - 检查是否为思考内容
+              if (part.thought) {
+                thoughts += part.text || ''
+                if (onThought) {
+                  onThought(thoughts)
+                }
+                // 记录思考结束时间（每次收到思考内容都更新）
+                thinkingEndTime = Date.now()
+              } else {
+                // 正常内容
+                const chunkText = part.text || ''
+                fullText += chunkText
+                onStream(fullText)
               }
-              // 记录思考结束时间（每次收到思考内容都更新）
-              thinkingEndTime = Date.now()
-            } else {
-              // 正常内容
-              const chunkText = part.text || ''
-              fullText += chunkText
-              onStream(fullText)
             }
           }
         }
       }
-    }
-    
-    generationEndTime = new Date()
-    
-    // 思考时间 = 从生成开始到最后一个思考内容的时间差
-    const thinkingTimeMs = generationStartTime && thinkingEndTime 
-      ? thinkingEndTime - generationStartTime.getTime() 
-      : undefined
+      
+      generationEndTime = new Date()
+      
+      // 思考时间 = 从生成开始到最后一个思考内容的时间差
+      const thinkingTimeMs = generationStartTime && thinkingEndTime 
+        ? thinkingEndTime - generationStartTime.getTime() 
+        : undefined
 
-    return {
-      content: fullText,
-      thoughts: thoughts || undefined,
-      thinkingTimeMs,
-      generationStartTime,
-      generationEndTime,
-      groundingMetadata,
-      webSearchQueries: webSearchQueries.length > 0 ? webSearchQueries : undefined
-    }
-  } 
-  // 非流式输出
-  else {
-    generationStartTime = new Date()
-    if (onGenerationStart) {
-      onGenerationStart(generationStartTime)
-    }
-    
-    const result = await chat.sendMessage(userParts)
-    
-    generationEndTime = new Date()
-    
-    // 提取grounding元数据
-    const candidate = result.response.candidates?.[0]
-    if (candidate?.groundingMetadata) {
-      groundingMetadata = candidate.groundingMetadata
-      if (groundingMetadata.webSearchQueries) {
-        webSearchQueries = groundingMetadata.webSearchQueries
+      return {
+        content: fullText,
+        thoughts: thoughts || undefined,
+        thinkingTimeMs,
+        generationStartTime,
+        generationEndTime,
+        groundingMetadata,
+        webSearchQueries: webSearchQueries.length > 0 ? webSearchQueries : undefined
       }
-    }
-
-    // 分离思考内容和正常内容
-    let contentText = ''
-    if (candidate?.content?.parts) {
-      for (const part of candidate.content.parts) {
-        // @ts-ignore
-        if (part.thought) {
-          thoughts += part.text || ''
-          thinkingEndTime = Date.now()
-        } else {
-          contentText += part.text || ''
+    } 
+    // 非流式输出
+    else {
+      generationStartTime = new Date()
+      if (onGenerationStart) {
+        onGenerationStart(generationStartTime)
+      }
+      
+      const result = await chat.sendMessage(userParts)
+      
+      generationEndTime = new Date()
+      
+      // 提取grounding元数据
+      const candidate = result.response.candidates?.[0]
+      if (candidate?.groundingMetadata) {
+        groundingMetadata = candidate.groundingMetadata
+        if (groundingMetadata.webSearchQueries) {
+          webSearchQueries = groundingMetadata.webSearchQueries
         }
       }
-    }
 
-    if (!contentText) {
-      contentText = result.response.text()
-    }
+      // 分离思考内容和正常内容
+      let contentText = ''
+      if (candidate?.content?.parts) {
+        for (const part of candidate.content.parts) {
+          // @ts-ignore
+          if (part.thought) {
+            thoughts += part.text || ''
+            thinkingEndTime = Date.now()
+          } else {
+            contentText += part.text || ''
+          }
+        }
+      }
 
-    // 思考时间 = 从生成开始到最后一个思考内容的时间差
-    const thinkingTimeMs = generationStartTime && thinkingEndTime 
-      ? thinkingEndTime - generationStartTime.getTime() 
-      : undefined
+      if (!contentText) {
+        contentText = result.response.text()
+      }
 
-    return {
-      content: contentText,
-      thoughts: thoughts || undefined,
-      thinkingTimeMs,
-      generationStartTime,
-      generationEndTime,
-      groundingMetadata,
-      webSearchQueries: webSearchQueries.length > 0 ? webSearchQueries : undefined
+      // 思考时间 = 从生成开始到最后一个思考内容的时间差
+      const thinkingTimeMs = generationStartTime && thinkingEndTime 
+        ? thinkingEndTime - generationStartTime.getTime() 
+        : undefined
+
+      return {
+        content: contentText,
+        thoughts: thoughts || undefined,
+        thinkingTimeMs,
+        generationStartTime,
+        generationEndTime,
+        groundingMetadata,
+        webSearchQueries: webSearchQueries.length > 0 ? webSearchQueries : undefined
+      }
     }
+  } catch (error) {
+    if (error instanceof GoogleGenerativeAIFetchError) {
+      if (error.status) {
+        throw new Error(`API请求失败 (${error.status}): ${error.statusText || '未知错误'}`)
+      } else {
+        throw new Error('网络连接失败')
+      }
+    }
+    throw error
   }
 }
