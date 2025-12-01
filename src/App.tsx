@@ -4,9 +4,11 @@ import ResizablePanel from './components/layout/ResizablePanel'
 import APIKeySettings from './components/settings/APIKeySettings'
 import StorageSetupDialog from './components/settings/StorageSetupDialog'
 import PDFUploader from './components/pdf/PDFUploader'
-import PDFViewer from './components/pdf/PDFViewer'
 import ChatPanel from './components/chat/ChatPanel'
+import NotePanel from './components/note/NotePanel'
+import PDFViewer from './components/pdf/PDFViewer'
 import { getDirectoryHandle, checkDirectoryPermission } from './services/storage/fileSystem'
+import { db } from './services/storage/db'
 
 function App() {
   const [showSettings, setShowSettings] = useState(false)
@@ -14,6 +16,9 @@ function App() {
   const [currentPaperId, setCurrentPaperId] = useState<number | null>(null)
   const [showUploader, setShowUploader] = useState(true)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [activeTab, setActiveTab] = useState<'paper' | 'note'>('paper')
+  const [noteMode, setNoteMode] = useState<'edit' | 'preview'>('edit')
+  const [currentPaperLocalPath, setCurrentPaperLocalPath] = useState<string | undefined>(undefined)
 
   // 检查是否需要显示首次引导
   useEffect(() => {
@@ -39,9 +44,13 @@ function App() {
     checkStorageSetup()
   }, [])
 
-  const handlePaperSelect = (paperId: number) => {
+  const handlePaperSelect = async (paperId: number) => {
     setCurrentPaperId(paperId)
     setShowUploader(false)
+    setActiveTab('paper')
+    
+    const paper = await db.papers.get(paperId)
+    setCurrentPaperLocalPath(paper?.localPath)
   }
 
   const handleNewPaper = () => {
@@ -77,9 +86,73 @@ function App() {
               <PDFUploader onUploadComplete={handleUploadComplete} />
             </div>
           ) : currentPaperId ? (
-            /* Paper View: Split between PDF and Chat */
+            /* Paper View: 论文/笔记标签页 + 聊天面板 */
             <ResizablePanel
-              leftPanel={<PDFViewer paperId={currentPaperId} />}
+              leftPanel={
+                <div className="relative h-full">
+                  {/* 顶部热区 - 只有鼠标悬停在顶部区域才触发显示工具栏 */}
+                  <div className="absolute top-0 left-0 right-0 h-12 z-20 group/tabs">
+                    {/* 标签页切换工具栏 */}
+                    <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between bg-white/95 backdrop-blur-sm px-2 py-1 opacity-0 group-hover/tabs:opacity-100 transition-opacity duration-200 shadow-sm">
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => setActiveTab('paper')}
+                        className={`px-3 py-1.5 text-sm font-medium rounded transition-colors ${
+                          activeTab === 'paper'
+                            ? 'bg-blue-100 text-blue-600'
+                            : 'text-gray-600 hover:bg-gray-100'
+                        }`}
+                      >
+                        📄 论文
+                      </button>
+                      <button
+                        onClick={() => setActiveTab('note')}
+                        className={`px-3 py-1.5 text-sm font-medium rounded transition-colors ${
+                          activeTab === 'note'
+                            ? 'bg-blue-100 text-blue-600'
+                            : 'text-gray-600 hover:bg-gray-100'
+                        }`}
+                      >
+                        📝 笔记
+                      </button>
+                    </div>
+                    {/* 笔记模式切换 - 仅在笔记标签激活时显示 */}
+                    {activeTab === 'note' && (
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => setNoteMode('edit')}
+                          className={`px-3 py-1.5 text-sm font-medium rounded transition-colors ${
+                            noteMode === 'edit'
+                              ? 'bg-green-100 text-green-600'
+                              : 'text-gray-600 hover:bg-gray-100'
+                          }`}
+                        >
+                          ✏️ 编辑
+                        </button>
+                        <button
+                          onClick={() => setNoteMode('preview')}
+                          className={`px-3 py-1.5 text-sm font-medium rounded transition-colors ${
+                            noteMode === 'preview'
+                              ? 'bg-green-100 text-green-600'
+                              : 'text-gray-600 hover:bg-gray-100'
+                          }`}
+                        >
+                          👁️ 预览
+                        </button>
+                      </div>
+                    )}
+                    </div>
+                  </div>
+                  {/* 内容区域 */}
+                  <div className="h-full">
+                    {activeTab === 'paper' ? (
+                      <PDFViewer paperId={currentPaperId} />
+                    ) : (
+                      <NotePanel paperId={currentPaperId} localPath={currentPaperLocalPath} mode={noteMode} />
+                    )}
+                  </div>
+                </div>
+              }
               rightPanel={<ChatPanel paperId={currentPaperId} />}
               defaultLeftWidth={50}
               minLeftWidth={30}

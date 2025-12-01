@@ -220,4 +220,44 @@ export async function deletePaperFromLocal(localPath: string): Promise<void> {
   await deleteDirectory(groupHandle, folderName)
 }
 
+/**
+ * 保存笔记到本地
+ */
+export async function saveNoteToLocal(localPath: string, content: string): Promise<void> {
+  const rootHandle = await getDirectoryHandle()
+
+  if (!rootHandle) {
+    throw new Error('未配置存储目录')
+  }
+
+  const paperDirHandle = await createDirectory(rootHandle, localPath)
+  await writeTextFile(paperDirHandle, 'note.md', content)
+}
+
+/**
+ * 从本地读取笔记
+ */
+export async function loadNoteFromLocal(localPath: string): Promise<string | null> {
+  const rootHandle = await getDirectoryHandle()
+
+  if (!rootHandle) {
+    return null
+  }
+
+  try {
+    const paperDirHandle = await createDirectory(rootHandle, localPath)
+    return await readTextFile(paperDirHandle, 'note.md')
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 检查笔记是否存在
+ */
+export async function hasNoteLocal(localPath: string): Promise<boolean> {
+  const note = await loadNoteFromLocal(localPath)
+  return note !== null
+}
+
 
