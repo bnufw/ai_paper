@@ -1,4 +1,4 @@
-**Deep Learning Research Assistant — Prompt**
+**Deep Learning Research Assistant**
 
 # Role
 

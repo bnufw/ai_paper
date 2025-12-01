@@ -58,6 +58,7 @@ export interface Message {
   generationEndTime?: Date
   groundingMetadata?: any
   webSearchQueries?: string[]
+  addedToNote?: boolean
 }
 
 // 设置类型
@@ -321,6 +322,13 @@ export async function updateMessage(messageId: number, content: string, images?:
     images,
     timestamp: new Date()
   })
+}
+
+/**
+ * 标记消息已添加到笔记
+ */
+export async function markMessageAddedToNote(messageId: number): Promise<void> {
+  await db.messages.update(messageId, { addedToNote: true })
 }
 
 /**

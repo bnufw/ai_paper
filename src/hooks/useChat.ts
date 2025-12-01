@@ -383,6 +383,15 @@ export function useChat(paperId: number) {
     setEditingMessageId(null)
   }
 
+  /**
+   * 标记消息已添加到笔记（更新本地状态）
+   */
+  const markAsAddedToNote = (messageId: number) => {
+    setMessages(prev => prev.map(msg =>
+      msg.id === messageId ? { ...msg, addedToNote: true } : msg
+    ))
+  }
+
   return {
     messages,
     conversations,
@@ -400,6 +409,7 @@ export function useChat(paperId: number) {
     setCurrentConversationId,
     deleteConversation,
     renameConversation,
-    exportConversation
+    exportConversation,
+    markAsAddedToNote
   }
 }
