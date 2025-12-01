@@ -38,8 +38,12 @@ export async function generateNote(
   const settings = await getGeminiSettings()
   const genAI = new GoogleGenerativeAI(apiKey)
 
+  // 读取笔记提示词作为系统指令
+  const systemPrompt = await loadNotePrompt()
+
   const model = genAI.getGenerativeModel({
-    model: settings.model === 'gemini-3-pro-preview' ? 'gemini-3-pro-preview' : 'gemini-2.5-pro'
+    model: settings.model === 'gemini-3-pro-preview' ? 'gemini-3-pro-preview' : 'gemini-2.5-pro',
+    systemInstruction: systemPrompt
   })
 
   // 读取论文内容
@@ -49,17 +53,11 @@ export async function generateNote(
     throw new Error('无法读取论文内容')
   }
 
-  // 读取笔记提示词
-  const systemPrompt = await loadNotePrompt()
-
   let fullText = ''
 
   // 流式输出
   if (settings.streaming && onStream) {
-    const result = await model.generateContentStream([
-      { text: systemPrompt },
-      { text: paperContent }
-    ])
+    const result = await model.generateContentStream(paperContent)
 
     for await (const chunk of result.stream) {
       const chunkText = chunk.text()
@@ -67,10 +65,7 @@ export async function generateNote(
       onStream(fullText)
     }
   } else {
-    const result = await model.generateContent([
-      { text: systemPrompt },
-      { text: paperContent }
-    ])
+    const result = await model.generateContent(paperContent)
     fullText = result.response.text()
   }
 
