@@ -178,6 +178,8 @@ export default function APIKeySettings({ onClose }: APIKeySettingsProps) {
               <div className="relative">
                 <input
                   type={showKeys.mistral ? 'text' : 'password'}
+                  name="mistral-api-key"
+                  autoComplete="off"
                   value={keys.mistral}
                   onChange={(e) => setKeys({ ...keys, mistral: e.target.value })}
                   placeholder="sk-..."
@@ -201,6 +203,8 @@ export default function APIKeySettings({ onClose }: APIKeySettingsProps) {
               <div className="relative">
                 <input
                   type={showKeys.gemini ? 'text' : 'password'}
+                  name="gemini-api-key"
+                  autoComplete="off"
                   value={keys.gemini}
                   onChange={(e) => setKeys({ ...keys, gemini: e.target.value })}
                   placeholder="AI..."
