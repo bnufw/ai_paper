@@ -260,4 +260,19 @@ export async function hasNoteLocal(localPath: string): Promise<boolean> {
   return note !== null
 }
 
+/**
+ * 追加内容到笔记
+ */
+export async function appendNoteToLocal(localPath: string, content: string): Promise<void> {
+  const existingNote = await loadNoteFromLocal(localPath)
+  const timestamp = new Date().toLocaleString('zh-CN')
+  const separator = `\n\n---\n\n*从对话添加于 ${timestamp}*\n\n`
+  
+  const newContent = existingNote 
+    ? existingNote + separator + content
+    : `# 笔记\n\n${content}`
+  
+  await saveNoteToLocal(localPath, newContent)
+}
+
 

@@ -19,6 +19,11 @@ function App() {
   const [activeTab, setActiveTab] = useState<'paper' | 'note'>('paper')
   const [noteMode, setNoteMode] = useState<'edit' | 'preview'>('edit')
   const [currentPaperLocalPath, setCurrentPaperLocalPath] = useState<string | undefined>(undefined)
+  const [noteVersion, setNoteVersion] = useState(0)
+
+  const handleNoteUpdated = () => {
+    setNoteVersion(v => v + 1)
+  }
 
   // 检查是否需要显示首次引导
   useEffect(() => {
@@ -148,12 +153,12 @@ function App() {
                     {activeTab === 'paper' ? (
                       <PDFViewer paperId={currentPaperId} />
                     ) : (
-                      <NotePanel paperId={currentPaperId} localPath={currentPaperLocalPath} mode={noteMode} />
+                      <NotePanel paperId={currentPaperId} localPath={currentPaperLocalPath} mode={noteMode} noteVersion={noteVersion} />
                     )}
                   </div>
                 </div>
               }
-              rightPanel={<ChatPanel paperId={currentPaperId} />}
+              rightPanel={<ChatPanel paperId={currentPaperId} localPath={currentPaperLocalPath} onNoteUpdated={handleNoteUpdated} />}
               defaultLeftWidth={50}
               minLeftWidth={30}
               minRightWidth={30}

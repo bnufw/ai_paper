@@ -6,6 +6,7 @@ import rehypeKatex from 'rehype-katex'
 import rehypeHighlight from 'rehype-highlight'
 import { useChat } from '../../hooks/useChat'
 import { getGeminiSettings, type MessageImage, type Paper } from '../../services/storage/db'
+import { appendToNote } from '../../services/note/noteService'
 import ConversationList from './ConversationList'
 import ThinkingTimer from './ThinkingTimer'
 import ImageUploadButton from './ImageUploadButton'
@@ -20,9 +21,11 @@ import 'highlight.js/styles/github-dark.css'
 
 interface ChatPanelProps {
   paperId: number
+  localPath: string | undefined
+  onNoteUpdated?: () => void
 }
 
-export default function ChatPanel({ paperId }: ChatPanelProps) {
+export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPanelProps) {
   const {
     messages,
     conversations,
@@ -57,6 +60,8 @@ export default function ChatPanel({ paperId }: ChatPanelProps) {
     return saved ? JSON.parse(saved) : false
   })
   const [modelName, setModelName] = useState('Gemini')
+  const [addingToNoteId, setAddingToNoteId] = useState<number | null>(null)
+  const [addedToNoteId, setAddedToNoteId] = useState<number | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -140,6 +145,21 @@ export default function ChatPanel({ paperId }: ChatPanelProps) {
 
   const handleCloseViewer = () => {
     setViewerImages(null)
+  }
+
+  const handleAddToNote = async (messageId: number, content: string) => {
+    if (!localPath || addingToNoteId) return
+    setAddingToNoteId(messageId)
+    try {
+      await appendToNote(localPath, content)
+      setAddedToNoteId(messageId)
+      setTimeout(() => setAddedToNoteId(null), 1500)
+      onNoteUpdated?.()
+    } catch (err) {
+      console.error('添加到笔记失败:', err)
+    } finally {
+      setAddingToNoteId(null)
+    }
   }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -381,6 +401,24 @@ export default function ChatPanel({ paperId }: ChatPanelProps) {
                         {msg.content}
                       </ReactMarkdown>
                     </div>
+
+                    {/* 添加到笔记按钮 */}
+                    {!loading && localPath && (
+                      <div className="mt-2 flex justify-end">
+                        <button
+                          onClick={() => handleAddToNote(msg.id!, msg.content)}
+                          disabled={addingToNoteId === msg.id || addedToNoteId === msg.id}
+                          className={`text-xs transition-colors disabled:opacity-70 ${
+                            addedToNoteId === msg.id 
+                              ? 'text-green-600' 
+                              : 'text-gray-500 hover:text-blue-600'
+                          }`}
+                          title="添加到笔记"
+                        >
+                          {addingToNoteId === msg.id ? '添加中...' : addedToNoteId === msg.id ? '✓ 已添加' : '📝 添加到笔记'}
+                        </button>
+                      </div>
+                    )}
                   </>
                 )}
                 <div

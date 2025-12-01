@@ -1,7 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { getAPIKey, getGeminiSettings } from '../storage/db'
 import { loadMarkdownFromLocal } from '../storage/paperStorage'
-import { saveNoteToLocal, loadNoteFromLocal, hasNoteLocal } from '../storage/paperStorage'
+import { saveNoteToLocal, loadNoteFromLocal, hasNoteLocal, appendNoteToLocal } from '../storage/paperStorage'
 
 /**
  * 读取笔记生成提示词
@@ -105,4 +105,13 @@ export async function saveNote(localPath: string, content: string): Promise<void
  */
 export async function hasNote(localPath: string): Promise<boolean> {
   return await hasNoteLocal(localPath)
+}
+
+/**
+ * 追加内容到笔记
+ * @param localPath 论文本地路径
+ * @param content 要追加的内容
+ */
+export async function appendToNote(localPath: string, content: string): Promise<void> {
+  await appendNoteToLocal(localPath, content)
 }

@@ -7,9 +7,10 @@ interface NotePanelProps {
   paperId: number
   localPath: string | undefined
   mode: 'edit' | 'preview'
+  noteVersion?: number
 }
 
-export default function NotePanel({ paperId, localPath, mode }: NotePanelProps) {
+export default function NotePanel({ paperId, localPath, mode, noteVersion }: NotePanelProps) {
   const [noteContent, setNoteContent] = useState<string>('')
   const [hasNote, setHasNote] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
@@ -38,7 +39,7 @@ export default function NotePanel({ paperId, localPath, mode }: NotePanelProps) 
     }
 
     loadExistingNote()
-  }, [paperId, localPath])
+  }, [paperId, localPath, noteVersion])
 
   // 生成笔记
   const handleGenerate = async () => {
