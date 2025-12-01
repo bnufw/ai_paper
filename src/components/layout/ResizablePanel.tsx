@@ -16,12 +16,14 @@ function ResizablePanel({
   minRightWidth = 20,
 }: ResizablePanelProps) {
   const [leftWidth, setLeftWidth] = useState(defaultLeftWidth)
+  const [collapsed, setCollapsed] = useState(false)
+  const [widthBeforeCollapse, setWidthBeforeCollapse] = useState(defaultLeftWidth)
   const isDraggingRef = useRef(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      if (!isDraggingRef.current || !containerRef.current) return
+      if (!isDraggingRef.current || !containerRef.current || collapsed) return
 
       const containerRect = containerRef.current.getBoundingClientRect()
       const newLeftWidth = ((e.clientX - containerRect.left) / containerRect.width) * 100
@@ -46,35 +48,78 @@ function ResizablePanel({
       document.removeEventListener('mousemove', handleMouseMove)
       document.removeEventListener('mouseup', handleMouseUp)
     }
-  }, [minLeftWidth, minRightWidth])
+  }, [minLeftWidth, minRightWidth, collapsed])
 
   const handleMouseDown = () => {
+    if (collapsed) return
     isDraggingRef.current = true
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
   }
 
+  const toggleCollapse = () => {
+    if (!collapsed) {
+      setWidthBeforeCollapse(leftWidth)
+    } else {
+      setLeftWidth(widthBeforeCollapse)
+    }
+    setCollapsed(!collapsed)
+  }
+
   return (
     <div ref={containerRef} className="flex h-full w-full">
       {/* 左侧面板 */}
-      <div style={{ width: `${leftWidth}%` }} className="flex flex-col overflow-hidden">
+      <div 
+        style={{ width: collapsed ? '100%' : `${leftWidth}%` }} 
+        className="flex flex-col overflow-hidden transition-[width] duration-300"
+      >
         {leftPanel}
       </div>
 
-      {/* 可拖拽分隔条 */}
-      <div
-        className="w-px bg-gray-300 hover:bg-blue-500 cursor-col-resize flex-shrink-0 relative group"
-        onMouseDown={handleMouseDown}
-      >
-        <div className="absolute inset-y-0 -left-1 -right-1" />
-        {/* 拖拽提示 */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
-          <div className="w-0.5 h-12 bg-blue-500 rounded-full" />
+      {/* 分隔条与折叠按钮 */}
+      <div className="relative flex-shrink-0">
+        {/* 可拖拽分隔条 */}
+        <div
+          className={`w-px h-full bg-gray-300 flex-shrink-0 relative group ${
+            collapsed ? '' : 'hover:bg-blue-500 cursor-col-resize'
+          }`}
+          onMouseDown={handleMouseDown}
+        >
+          <div className="absolute inset-y-0 -left-1 -right-1" />
+          {/* 拖拽提示 - 仅在未折叠时显示 */}
+          {!collapsed && (
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="w-0.5 h-12 bg-blue-500 rounded-full" />
+            </div>
+          )}
         </div>
+
+        {/* 折叠/展开按钮 */}
+        <button
+          onClick={toggleCollapse}
+          className={`absolute top-1/2 -translate-y-1/2 z-30 w-5 h-10 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 hover:border-blue-400 flex items-center justify-center transition-all ${
+            collapsed ? '-right-2.5' : '-right-2.5'
+          }`}
+          title={collapsed ? '展开对话面板' : '折叠对话面板'}
+        >
+          <svg 
+            className={`w-3 h-3 text-gray-500 transition-transform ${collapsed ? 'rotate-180' : ''}`}
+            fill="none" 
+            stroke="currentColor" 
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
       </div>
 
       {/* 右侧面板 */}
-      <div style={{ width: `${100 - leftWidth}%` }} className="flex flex-col overflow-hidden">
+      <div 
+        style={{ width: collapsed ? '0%' : `${100 - leftWidth}%` }} 
+        className={`flex flex-col transition-[width] duration-300 ${
+          collapsed ? 'overflow-hidden' : 'overflow-hidden'
+        }`}
+      >
         {rightPanel}
       </div>
     </div>
