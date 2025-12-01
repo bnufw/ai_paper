@@ -9,6 +9,7 @@ import NotePanel from './components/note/NotePanel'
 import PDFViewer from './components/pdf/PDFViewer'
 import { getDirectoryHandle, checkDirectoryPermission } from './services/storage/fileSystem'
 import { db } from './services/storage/db'
+import { organizeNote, loadNote } from './services/note/noteService'
 
 function App() {
   const [showSettings, setShowSettings] = useState(false)
@@ -20,9 +21,29 @@ function App() {
   const [noteMode, setNoteMode] = useState<'edit' | 'preview'>('edit')
   const [currentPaperLocalPath, setCurrentPaperLocalPath] = useState<string | undefined>(undefined)
   const [noteVersion, setNoteVersion] = useState(0)
+  const [isOrganizing, setIsOrganizing] = useState(false)
 
   const handleNoteUpdated = () => {
     setNoteVersion(v => v + 1)
+  }
+
+  const handleOrganizeNote = async () => {
+    if (!currentPaperLocalPath || isOrganizing) return
+    
+    setIsOrganizing(true)
+    try {
+      const currentContent = await loadNote(currentPaperLocalPath)
+      if (!currentContent) {
+        alert('笔记内容为空，无法整理')
+        return
+      }
+      await organizeNote(currentPaperLocalPath, currentContent)
+      setNoteVersion(v => v + 1)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '整理笔记失败')
+    } finally {
+      setIsOrganizing(false)
+    }
   }
 
   // 检查是否需要显示首次引导
@@ -143,6 +164,17 @@ function App() {
                           }`}
                         >
                           👁️ 预览
+                        </button>
+                        <button
+                          onClick={handleOrganizeNote}
+                          disabled={isOrganizing}
+                          className={`px-3 py-1.5 text-sm font-medium rounded transition-colors ${
+                            isOrganizing
+                              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                              : 'text-gray-600 hover:bg-purple-100 hover:text-purple-600'
+                          }`}
+                        >
+                          {isOrganizing ? '⏳ 整理中...' : '✨ AI整理'}
                         </button>
                       </div>
                     )}
