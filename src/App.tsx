@@ -9,7 +9,7 @@ import NotePanel from './components/note/NotePanel'
 import PDFViewer from './components/pdf/PDFViewer'
 import { getDirectoryHandle, checkDirectoryPermission } from './services/storage/fileSystem'
 import { db } from './services/storage/db'
-import { organizeNote, loadNote } from './services/note/noteService'
+import { organizeNote, loadNote, generateNote, saveNote } from './services/note/noteService'
 
 function App() {
   const [showSettings, setShowSettings] = useState(false)
@@ -22,6 +22,7 @@ function App() {
   const [currentPaperLocalPath, setCurrentPaperLocalPath] = useState<string | undefined>(undefined)
   const [noteVersion, setNoteVersion] = useState(0)
   const [isOrganizing, setIsOrganizing] = useState(false)
+  const [isGeneratingNote, setIsGeneratingNote] = useState(false)
 
   const handleNoteUpdated = () => {
     setNoteVersion(v => v + 1)
@@ -43,6 +44,21 @@ function App() {
       alert(err instanceof Error ? err.message : '整理笔记失败')
     } finally {
       setIsOrganizing(false)
+    }
+  }
+
+  const handleGenerateNote = async () => {
+    if (!currentPaperLocalPath || isGeneratingNote) return
+    
+    setIsGeneratingNote(true)
+    try {
+      const content = await generateNote(currentPaperLocalPath)
+      await saveNote(currentPaperLocalPath, content)
+      setNoteVersion(v => v + 1)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '生成笔记失败')
+    } finally {
+      setIsGeneratingNote(false)
     }
   }
 
@@ -175,6 +191,17 @@ function App() {
                           }`}
                         >
                           {isOrganizing ? '⏳ 整理中...' : '✨ AI整理'}
+                        </button>
+                        <button
+                          onClick={handleGenerateNote}
+                          disabled={isGeneratingNote}
+                          className={`px-3 py-1.5 text-sm font-medium rounded transition-colors ${
+                            isGeneratingNote
+                              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                              : 'text-gray-600 hover:bg-blue-100 hover:text-blue-600'
+                          }`}
+                        >
+                          {isGeneratingNote ? '⏳ 生成中...' : '🤖 AI生成'}
                         </button>
                       </div>
                     )}
