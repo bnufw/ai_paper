@@ -9,8 +9,6 @@ interface ConversationListProps {
   onRename: (id: number, newTitle: string) => void
   onExport: (id: number) => void
   onNewConversation: () => void
-  isCollapsed: boolean
-  onToggleCollapse: () => void
 }
 
 export default function ConversationList({
@@ -20,20 +18,11 @@ export default function ConversationList({
   onDelete,
   onRename,
   onExport,
-  onNewConversation,
-  isCollapsed,
-  onToggleCollapse
+  onNewConversation
 }: ConversationListProps) {
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
   const [hoveredId, setHoveredId] = useState<number | null>(null)
-
-  // 折叠时,点击外部区域展开
-  const handleCollapsedClick = () => {
-    if (isCollapsed) {
-      onToggleCollapse()
-    }
-  }
 
   const handleStartEdit = (conv: Conversation) => {
     setEditingId(conv.id!)
@@ -89,36 +78,16 @@ export default function ConversationList({
   }
 
   return (
-    <div 
-      className={`w-full flex items-center bg-white border-b transition-all duration-300 ${
-        isCollapsed ? 'h-12' : 'h-auto'
-      }`}
-      onClick={handleCollapsedClick}
-    >
-      {/* 新对话按钮和收起按钮 */}
-      <div className="px-4 py-2 border-r flex items-center space-x-2">
+    <div className="flex-1 min-w-0 flex items-center bg-white">
+      {/* 新对话按钮 */}
+      <div className="px-2 py-1.5 border-r flex items-center">
         <button
           onClick={onNewConversation}
-          className="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-1 text-sm"
+          className="bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 flex items-center space-x-1 text-xs"
         >
           <span>+</span>
           <span>新对话</span>
         </button>
-        
-        {!isCollapsed && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              onToggleCollapse()
-            }}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-            title="收起对话列表"
-          >
-            <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-            </svg>
-          </button>
-        )}
       </div>
 
       {/* 对话列表 - 横向滚动 */}

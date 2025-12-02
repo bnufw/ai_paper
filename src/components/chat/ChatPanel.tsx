@@ -56,10 +56,6 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
     searchText: string
     position: { top: number; left: number }
   } | null>(null)
-  const [isCollapsed, setIsCollapsed] = useState(() => {
-    const saved = localStorage.getItem('conversationListCollapsed')
-    return saved ? JSON.parse(saved) : false
-  })
   const [modelName, setModelName] = useState('Gemini')
   const [addingToNoteId, setAddingToNoteId] = useState<number | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -85,15 +81,6 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
       window.removeEventListener('gemini-settings-changed', handleSettingsChange)
     }
   }, [])
-
-  // 持久化折叠状态
-  const toggleCollapse = () => {
-    setIsCollapsed((prev: boolean) => {
-      const newValue = !prev
-      localStorage.setItem('conversationListCollapsed', JSON.stringify(newValue))
-      return newValue
-    })
-  }
 
   // 自动滚动到最新消息
   useEffect(() => {
@@ -267,13 +254,11 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
           onRename={renameConversation}
           onExport={exportConversation}
           onNewConversation={createNewConversation}
-          isCollapsed={isCollapsed}
-          onToggleCollapse={toggleCollapse}
         />
         
         {/* 模型名显示 */}
-        <div className="px-4 py-2 border-l flex items-center">
-          <span className="text-sm text-gray-700 font-medium bg-blue-100 px-3 py-1.5 rounded whitespace-nowrap">
+        <div className="flex-shrink-0 px-2 py-1.5 border-l flex items-center">
+          <span className="text-xs text-gray-600 font-medium bg-blue-50 px-2 py-1 rounded whitespace-nowrap">
             {modelName}
           </span>
         </div>
