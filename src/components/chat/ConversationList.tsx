@@ -55,16 +55,9 @@ export default function ConversationList({
     }
   }
 
-  const handleDeleteClick = (e: React.MouseEvent, id: number, title: string) => {
+  const handleDeleteClick = (e: React.MouseEvent, id: number) => {
     e.stopPropagation()
-    if (window.confirm(`确定删除对话"${title}"吗?`)) {
-      try {
-        onDelete(id)
-      } catch (err) {
-        alert('删除失败,请重试')
-        console.error(err)
-      }
-    }
+    onDelete(id)
   }
 
   const handleExportClick = (e: React.MouseEvent, id: number) => {
@@ -150,7 +143,7 @@ export default function ConversationList({
                           </svg>
                         </button>
                         <button
-                          onClick={(e) => handleDeleteClick(e, conv.id!, conv.title)}
+                          onClick={(e) => handleDeleteClick(e, conv.id!)}
                           className="p-1 hover:bg-red-100 rounded"
                           title="删除"
                         >
