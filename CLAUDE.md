@@ -68,6 +68,8 @@ App.tsx
 - IndexedDB 数据库版本管理在 `db.ts` 中，修改表结构需升级版本号
 - 图片压缩使用 `utils/imageCompressor.ts`，JPEG 质量 0.8
 - 首次使用需用户授权本地目录访问
+- 无论何时，只要完成切实编码行为后，**必须立即使用codex review代码改动和对应需求完成程度**。
+- codex只能给出参考，你**必须有自己的思考，甚至需要对codex的回答提出置疑**。尽信书则不如无书，你与codex的最终使命都是达成统一、全面、精准的意见，所以你们必须不断争辩已找到通向真理的唯一途径。
 
 <!-- OPENSPEC:START -->
 # OpenSpec Instructions

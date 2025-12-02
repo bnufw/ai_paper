@@ -1,4 +1,11 @@
 import Dexie, { Table } from 'dexie'
+import type { IdeaSession, IdeaWorkflowConfig } from '../../types/idea'
+import {
+  PRESET_GENERATORS,
+  PRESET_EVALUATORS,
+  PRESET_SUMMARIZER,
+  DEFAULT_ENDPOINTS
+} from '../../types/idea'
 
 // 论文分组类型
 export interface PaperGroup {
@@ -90,6 +97,7 @@ class PaperReaderDatabase extends Dexie {
   conversations!: Table<Conversation, number>
   messages!: Table<Message, number>
   settings!: Table<Settings, string>
+  ideaSessions!: Table<IdeaSession, number>  // 新增：Idea 工作流会话
 
   constructor() {
     super('PaperReaderDB')
@@ -121,6 +129,19 @@ class PaperReaderDatabase extends Dexie {
       conversations: '++id, paperId, createdAt',
       messages: '++id, conversationId, timestamp',
       settings: 'key'
+    })
+
+    // v5: 新增 Idea 工作流会话表
+    this.version(5).stores({
+      groups: '++id, createdAt',
+      papers: '++id, groupId, createdAt',
+      images: '++id, paperId, imageIndex',
+      conversations: '++id, paperId, createdAt',
+      messages: '++id, conversationId, timestamp',
+      settings: 'key',
+      ideaSessions: '++id, groupId, timestamp, status, createdAt'
+    }).upgrade(() => {
+      console.log('[DB] 升级数据库到版本 5，新增 ideaSessions 表')
     })
   }
 }
@@ -464,4 +485,162 @@ export async function getPaperMarkdown(paperId: number): Promise<string> {
   }
   
   return markdown
+}
+
+// ========== Idea 工作流相关函数 ==========
+
+/**
+ * 获取 Idea 工作流配置
+ */
+export async function getIdeaWorkflowConfig(): Promise<IdeaWorkflowConfig> {
+  const setting = await db.settings.get('idea_workflow_config')
+  if (setting?.value) {
+    return JSON.parse(setting.value)
+  }
+
+  // 返回默认配置
+  return {
+    generators: PRESET_GENERATORS,
+    evaluators: PRESET_EVALUATORS,
+    summarizer: PRESET_SUMMARIZER,
+    prompts: {
+      generator: '',  // 空字符串表示使用默认提示词
+      evaluator: '',
+      summarizer: ''
+    }
+  }
+}
+
+/**
+ * 保存 Idea 工作流配置
+ */
+export async function saveIdeaWorkflowConfig(config: IdeaWorkflowConfig): Promise<void> {
+  await db.settings.put({
+    key: 'idea_workflow_config',
+    value: JSON.stringify(config)
+  })
+}
+
+/**
+ * 获取 Idea 工作流 API 密钥
+ */
+export async function getIdeaApiKey(provider: 'openai' | 'aliyun'): Promise<string | null> {
+  const keyMap = {
+    openai: 'idea_openai_api_key',
+    aliyun: 'idea_aliyun_api_key'
+  }
+  const setting = await db.settings.get(keyMap[provider])
+  return setting?.value || null
+}
+
+/**
+ * 保存 Idea 工作流 API 密钥
+ */
+export async function saveIdeaApiKey(provider: 'openai' | 'aliyun', value: string): Promise<void> {
+  const keyMap = {
+    openai: 'idea_openai_api_key',
+    aliyun: 'idea_aliyun_api_key'
+  }
+  await db.settings.put({ key: keyMap[provider], value })
+}
+
+/**
+ * 获取 Idea 工作流 API 端点
+ */
+export async function getIdeaApiEndpoint(provider: 'openai' | 'aliyun' | 'gemini'): Promise<string> {
+  const keyMap = {
+    openai: 'idea_openai_base_url',
+    aliyun: 'idea_aliyun_base_url',
+    gemini: 'idea_gemini_base_url'
+  }
+  const setting = await db.settings.get(keyMap[provider])
+  return setting?.value || DEFAULT_ENDPOINTS[provider] || ''
+}
+
+/**
+ * 保存 Idea 工作流 API 端点
+ */
+export async function saveIdeaApiEndpoint(provider: 'openai' | 'aliyun' | 'gemini', value: string): Promise<void> {
+  const keyMap = {
+    openai: 'idea_openai_base_url',
+    aliyun: 'idea_aliyun_base_url',
+    gemini: 'idea_gemini_base_url'
+  }
+  await db.settings.put({ key: keyMap[provider], value })
+}
+
+/**
+ * 创建 Idea 会话
+ */
+export async function createIdeaSession(
+  groupId: number,
+  groupName: string,
+  timestamp: string,
+  localPath: string
+): Promise<number> {
+  return await db.ideaSessions.add({
+    groupId,
+    groupName,
+    timestamp,
+    status: 'running',
+    localPath,
+    createdAt: new Date()
+  })
+}
+
+/**
+ * 更新 Idea 会话状态
+ */
+export async function updateIdeaSessionStatus(
+  sessionId: number,
+  status: IdeaSession['status'],
+  extras?: { bestIdeaSlug?: string; error?: string }
+): Promise<void> {
+  const updates: Partial<IdeaSession> = { status }
+
+  if (status === 'completed' || status === 'failed' || status === 'cancelled') {
+    updates.completedAt = new Date()
+  }
+
+  if (extras?.bestIdeaSlug) {
+    updates.bestIdeaSlug = extras.bestIdeaSlug
+  }
+
+  if (extras?.error) {
+    updates.error = extras.error
+  }
+
+  await db.ideaSessions.update(sessionId, updates)
+}
+
+/**
+ * 获取分组的 Idea 会话历史
+ */
+export async function getIdeaSessionsByGroup(groupId: number): Promise<IdeaSession[]> {
+  return db.ideaSessions
+    .where('groupId')
+    .equals(groupId)
+    .reverse()
+    .sortBy('createdAt')
+}
+
+/**
+ * 获取单个 Idea 会话
+ */
+export async function getIdeaSession(sessionId: number): Promise<IdeaSession | undefined> {
+  return db.ideaSessions.get(sessionId)
+}
+
+/**
+ * 删除 Idea 会话
+ */
+export async function deleteIdeaSession(sessionId: number): Promise<void> {
+  await db.ideaSessions.delete(sessionId)
+}
+
+/**
+ * 获取所有 Idea 会话（按时间倒序）
+ */
+export async function getAllIdeaSessions(): Promise<IdeaSession[]> {
+  return db.ideaSessions.orderBy('createdAt').reverse().toArray()
 }

@@ -10,6 +10,7 @@ interface GroupListProps {
   onCreateGroup: () => void
   onRenameGroup: (groupId: number, newName: string) => void
   onDeleteGroup: (groupId: number) => void
+  onGenerateIdea?: (groupId: number, groupName: string) => void
 }
 
 export default function GroupList({
@@ -20,7 +21,8 @@ export default function GroupList({
   onDeletePaper,
   onCreateGroup,
   onRenameGroup,
-  onDeleteGroup
+  onDeleteGroup,
+  onGenerateIdea
 }: GroupListProps) {
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set())
   const [editingGroupId, setEditingGroupId] = useState<number | null>(null)
@@ -159,6 +161,18 @@ export default function GroupList({
 
               {/* 分组操作按钮 */}
               <div className="opacity-0 group-hover:opacity-100 flex items-center ml-2">
+                {onGenerateIdea && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onGenerateIdea(group.id!, group.name)
+                    }}
+                    className="text-yellow-400 hover:text-yellow-300 mr-2"
+                    title="生成 Idea"
+                  >
+                    🚀
+                  </button>
+                )}
                 <button
                   onClick={(e) => startRename(group, e)}
                   className="text-gray-400 hover:text-white mr-2"

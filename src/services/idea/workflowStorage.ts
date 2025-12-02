@@ -1,0 +1,291 @@
+/**
+ * 工作流文件存储服务
+ * 管理 Idea 工作流的本地文件存储
+ */
+
+import {
+  getDirectoryHandle,
+  createDirectory,
+  writeTextFile,
+  readTextFile,
+  checkDirectoryPermission
+} from '../storage/fileSystem'
+import { db } from '../storage/db'
+
+/**
+ * 生成时间戳字符串 (YYYY-MM-DD-HH-MM-SS)
+ */
+export function generateTimestamp(): string {
+  const now = new Date()
+  const pad = (n: number) => n.toString().padStart(2, '0')
+
+  return [
+    now.getFullYear(),
+    pad(now.getMonth() + 1),
+    pad(now.getDate()),
+    pad(now.getHours()),
+    pad(now.getMinutes()),
+    pad(now.getSeconds())
+  ].join('-')
+}
+
+/**
+ * 获取分组名称
+ */
+export async function getGroupName(groupId: number): Promise<string> {
+  const group = await db.groups.get(groupId)
+  return group?.name || '未知分组'
+}
+
+/**
+ * 创建工作流会话目录
+ * 结构: {groupName}/ideas/{timestamp}/
+ */
+export async function createWorkflowDirectory(
+  groupName: string,
+  timestamp: string
+): Promise<{ handle: FileSystemDirectoryHandle; path: string }> {
+  const rootHandle = await getDirectoryHandle()
+  if (!rootHandle) {
+    throw new Error('未配置存储目录，请先设置本地存储位置')
+  }
+
+  const hasPermission = await checkDirectoryPermission(rootHandle)
+  if (!hasPermission) {
+    throw new Error('存储目录访问权限已失效，请重新授权')
+  }
+
+  // 创建目录结构: {groupName}/ideas/{timestamp}/
+  const relativePath = `${groupName}/ideas/${timestamp}`
+  const sessionDir = await createDirectory(rootHandle, relativePath)
+
+  // 创建子目录
+  await createDirectory(sessionDir, 'ideas')
+  await createDirectory(sessionDir, 'reviews')
+
+  return { handle: sessionDir, path: relativePath }
+}
+
+/**
+ * 保存生成的 Idea
+ */
+export async function saveIdea(
+  sessionDir: FileSystemDirectoryHandle,
+  slug: string,
+  content: string
+): Promise<void> {
+  const ideasDir = await sessionDir.getDirectoryHandle('ideas')
+  const filename = `idea_${sanitizeFilename(slug)}.md`
+  await writeTextFile(ideasDir, filename, content)
+}
+
+/**
+ * 保存评审结果
+ */
+export async function saveReview(
+  sessionDir: FileSystemDirectoryHandle,
+  slug: string,
+  content: string
+): Promise<void> {
+  const reviewsDir = await sessionDir.getDirectoryHandle('reviews')
+  const filename = `review_${sanitizeFilename(slug)}.md`
+  await writeTextFile(reviewsDir, filename, content)
+}
+
+/**
+ * 保存最佳 Idea
+ */
+export async function saveBestIdea(
+  sessionDir: FileSystemDirectoryHandle,
+  content: string
+): Promise<void> {
+  await writeTextFile(sessionDir, 'best_idea.md', content)
+}
+
+/**
+ * 读取会话目录中的所有 Idea
+ */
+export async function readAllIdeas(
+  sessionDir: FileSystemDirectoryHandle
+): Promise<Map<string, string>> {
+  const ideas = new Map<string, string>()
+
+  try {
+    const ideasDir = await sessionDir.getDirectoryHandle('ideas')
+
+    for await (const entry of (ideasDir as any).values()) {
+      if (entry.kind === 'file' && entry.name.endsWith('.md')) {
+        const content = await readTextFile(ideasDir, entry.name)
+        // 从文件名提取 slug: idea_gemini.md -> gemini
+        const slug = entry.name.replace(/^idea_/, '').replace(/\.md$/, '')
+        ideas.set(slug, content)
+      }
+    }
+  } catch (e) {
+    console.warn('读取 ideas 目录失败:', e)
+  }
+
+  return ideas
+}
+
+/**
+ * 读取会话目录中的所有评审
+ */
+export async function readAllReviews(
+  sessionDir: FileSystemDirectoryHandle
+): Promise<Map<string, string>> {
+  const reviews = new Map<string, string>()
+
+  try {
+    const reviewsDir = await sessionDir.getDirectoryHandle('reviews')
+
+    for await (const entry of (reviewsDir as any).values()) {
+      if (entry.kind === 'file' && entry.name.endsWith('.md')) {
+        const content = await readTextFile(reviewsDir, entry.name)
+        const slug = entry.name.replace(/^review_/, '').replace(/\.md$/, '')
+        reviews.set(slug, content)
+      }
+    }
+  } catch (e) {
+    console.warn('读取 reviews 目录失败:', e)
+  }
+
+  return reviews
+}
+
+/**
+ * 读取最佳 Idea
+ */
+export async function readBestIdea(
+  sessionDir: FileSystemDirectoryHandle
+): Promise<string | null> {
+  try {
+    return await readTextFile(sessionDir, 'best_idea.md')
+  } catch (e) {
+    return null
+  }
+}
+
+/**
+ * 获取会话目录句柄
+ */
+export async function getSessionDirectory(
+  relativePath: string
+): Promise<FileSystemDirectoryHandle | null> {
+  const rootHandle = await getDirectoryHandle()
+  if (!rootHandle) return null
+
+  try {
+    const hasPermission = await checkDirectoryPermission(rootHandle)
+    if (!hasPermission) return null
+
+    return await createDirectory(rootHandle, relativePath)
+  } catch (e) {
+    console.warn('获取会话目录失败:', e)
+    return null
+  }
+}
+
+/**
+ * 收集分组下所有论文的笔记内容
+ */
+export async function collectGroupNotes(groupId: number): Promise<string> {
+  const rootHandle = await getDirectoryHandle()
+  if (!rootHandle) {
+    throw new Error('未配置存储目录')
+  }
+
+  const hasPermission = await checkDirectoryPermission(rootHandle)
+  if (!hasPermission) {
+    throw new Error('存储目录访问权限已失效')
+  }
+
+  // 获取分组下的所有论文
+  const papers = await db.papers.where('groupId').equals(groupId).toArray()
+
+  if (papers.length === 0) {
+    throw new Error('该分组下没有论文')
+  }
+
+  const notes: string[] = []
+
+  for (const paper of papers) {
+    if (!paper.localPath) continue
+
+    try {
+      // 尝试读取笔记文件
+      const paperDir = await createDirectory(rootHandle, paper.localPath)
+      const noteContent = await readTextFile(paperDir, 'note.md')
+
+      if (noteContent.trim()) {
+        notes.push(`# 论文：${paper.title}\n\n${noteContent}`)
+      }
+    } catch (e) {
+      // 笔记文件不存在，跳过
+      console.warn(`论文 "${paper.title}" 没有笔记文件`)
+    }
+  }
+
+  if (notes.length === 0) {
+    throw new Error('该分组下的论文都没有笔记内容，请先为论文生成笔记')
+  }
+
+  return notes.join('\n\n---\n\n')
+}
+
+/**
+ * 清理文件名（移除特殊字符，防止路径遍历攻击）
+ */
+function sanitizeFilename(name: string): string {
+  return name
+    .replace(/\.\./g, '')           // 移除路径遍历
+    .replace(/[\/\\]/g, '')         // 移除路径分隔符
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '_')   // 只保留安全字符
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '')
+    .substring(0, 200)              // 限制长度
+}
+
+/**
+ * 合并多个 Idea 为评审输入
+ */
+export function formatIdeasForReview(ideas: Map<string, string>): string {
+  const sections: string[] = []
+  let index = 1
+
+  for (const [slug, content] of ideas) {
+    sections.push(`========== Idea ${index} (来源: ${slug}) ==========\n\n${content}`)
+    index++
+  }
+
+  return sections.join('\n\n')
+}
+
+/**
+ * 合并评审和 Idea 为筛选输入
+ */
+export function formatForSummarizer(
+  ideas: Map<string, string>,
+  reviews: Map<string, string>
+): string {
+  const sections: string[] = []
+
+  // 添加所有 Idea
+  sections.push('# 所有生成的 Idea\n')
+  let ideaIndex = 1
+  for (const [slug, content] of ideas) {
+    sections.push(`## Idea ${ideaIndex} (来源: ${slug})\n\n${content}`)
+    ideaIndex++
+  }
+
+  // 添加所有评审
+  sections.push('\n\n# 所有评审报告\n')
+  let reviewIndex = 1
+  for (const [slug, content] of reviews) {
+    sections.push(`## 评审 ${reviewIndex} (来源: ${slug})\n\n${content}`)
+    reviewIndex++
+  }
+
+  return sections.join('\n\n')
+}

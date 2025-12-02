@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { 
-  getAllPapers, 
-  deletePaper, 
+import {
+  getAllPapers,
+  deletePaper,
   getAllGroups,
   createGroup,
   renameGroup,
@@ -11,6 +11,7 @@ import {
 } from '../../services/storage/db'
 import { deletePaperFromLocal } from '../../services/storage/paperStorage'
 import GroupList from './GroupList'
+import { IdeaWorkflowRunner, IdeaSettingsModal } from '../idea'
 
 interface SidebarProps {
   currentPaperId: number | null
@@ -32,6 +33,11 @@ export default function Sidebar({
   const [papers, setPapers] = useState<Paper[]>([])
   const [groups, setGroups] = useState<PaperGroup[]>([])
   const [loading, setLoading] = useState(true)
+
+  // Idea 工作流相关状态
+  const [ideaWorkflowOpen, setIdeaWorkflowOpen] = useState(false)
+  const [ideaSettingsOpen, setIdeaSettingsOpen] = useState(false)
+  const [selectedGroup, setSelectedGroup] = useState<{ id: number; name: string } | null>(null)
 
   // 加载论文和分组列表
   const loadData = async () => {
@@ -94,6 +100,12 @@ export default function Sidebar({
   const handleDeleteGroup = async (groupId: number) => {
     await deleteGroup(groupId)
     await loadData()
+  }
+
+  // 打开 Idea 生成工作流
+  const handleGenerateIdea = (groupId: number, groupName: string) => {
+    setSelectedGroup({ id: groupId, name: groupName })
+    setIdeaWorkflowOpen(true)
   }
 
   return (
@@ -167,6 +179,7 @@ export default function Sidebar({
             onCreateGroup={handleCreateGroup}
             onRenameGroup={handleRenameGroup}
             onDeleteGroup={handleDeleteGroup}
+            onGenerateIdea={handleGenerateIdea}
           />
         )
       )}
@@ -174,8 +187,15 @@ export default function Sidebar({
       {/* 底部：设置和统计信息 */}
       <div className="border-t border-gray-700">
         {!collapsed && (
-          <div className="p-4 text-sm text-gray-400">
-            共 {papers.length} 篇论文
+          <div className="p-4 text-sm text-gray-400 flex justify-between items-center">
+            <span>共 {papers.length} 篇论文</span>
+            <button
+              onClick={() => setIdeaSettingsOpen(true)}
+              className="text-gray-400 hover:text-yellow-400 transition-colors"
+              title="Idea 工作流设置"
+            >
+              🚀
+            </button>
           </div>
         )}
         <div className="p-4">
@@ -190,6 +210,25 @@ export default function Sidebar({
           </button>
         </div>
       </div>
+
+      {/* Idea 工作流弹窗 */}
+      {selectedGroup && (
+        <IdeaWorkflowRunner
+          isOpen={ideaWorkflowOpen}
+          groupId={selectedGroup.id}
+          groupName={selectedGroup.name}
+          onClose={() => {
+            setIdeaWorkflowOpen(false)
+            setSelectedGroup(null)
+          }}
+        />
+      )}
+
+      {/* Idea 设置弹窗 */}
+      <IdeaSettingsModal
+        isOpen={ideaSettingsOpen}
+        onClose={() => setIdeaSettingsOpen(false)}
+      />
     </div>
   )
 }
