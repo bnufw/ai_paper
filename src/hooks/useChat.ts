@@ -37,6 +37,42 @@ export function useChat(paperId: number) {
   const [streamingStartTime, setStreamingStartTime] = useState<Date | null>(null)
   const [editingMessageId, setEditingMessageId] = useState<number | null>(null)
 
+  // 刷新消息列表
+  const refreshMessages = async (conversationId: number) => {
+    const msgs = await db.messages
+      .where('conversationId')
+      .equals(conversationId)
+      .sortBy('timestamp')
+    setMessages(msgs)
+  }
+
+  // 准备对话（获取或创建）
+  const prepareConversation = async (content: string, editingId?: number): Promise<number> => {
+    let convId = currentConversationId
+    if (!convId) {
+      const now = new Date()
+      convId = await db.conversations.add({
+        paperId,
+        title: content.substring(0, 30).trim() + (content.length > 30 ? '...' : ''),
+        createdAt: now,
+        updatedAt: now
+      })
+      setCurrentConversationId(convId)
+    } else if (!editingId) {
+      // 非编辑模式下，检查是否需要更新标题
+      const msgCount = await db.messages
+        .where('conversationId')
+        .equals(convId)
+        .count()
+      if (msgCount === 0) {
+        await db.conversations.update(convId, {
+          title: content.substring(0, 30).trim() + (content.length > 30 ? '...' : '')
+        })
+      }
+    }
+    return convId
+  }
+
   // 加载对话列表
   useEffect(() => {
     async function loadConversations() {
@@ -179,99 +215,59 @@ export function useChat(paperId: number) {
   const sendMessage = async (content: string, images?: MessageImage[], editingId?: number) => {
     if (!content.trim() && (!images || images.length === 0)) return
 
+    // 立即更新UI状态，让用户感知到响应
     setLoading(true)
     setError('')
     setStreamingText('')
     setStreamingThought('')
-    setStreamingStartTime(null)
+    setStreamingStartTime(new Date()) // 立即设置，不等待API
 
     try {
-      // 如果没有当前对话，创建一个
-      let conversationId = currentConversationId
-      if (!conversationId) {
-        const now = new Date()
-        conversationId = await db.conversations.add({
-          paperId,
-          title: content.substring(0, 30).trim() + (content.length > 30 ? '...' : ''),
-          createdAt: now,
-          updatedAt: now
-        })
-        setCurrentConversationId(conversationId)
-      } else {
-        // 如果是对话的第一条消息,用它更新标题
-        const existingMessages = await db.messages
-          .where('conversationId')
-          .equals(conversationId)
-          .count()
-        
-        if (existingMessages === 0) {
-          await db.conversations.update(conversationId, {
-            title: content.substring(0, 30).trim() + (content.length > 30 ? '...' : '')
-          })
-        }
-      }
-
-      // 获取论文内容
-      const paper = await db.papers.get(paperId)
-      if (!paper) {
-        throw new Error('论文不存在')
-      }
-
-      // 解析引用
+      // 解析引用（同步操作，很快）
       const mentions = parseMentions(content)
-      
-      // 检查引用数量限制
       if (mentions.length > 3) {
         throw new Error('单条消息最多引用3篇论文')
       }
 
-      // 构建包含引用的上下文
-      let contextWithMentions = paper.markdown
-      
-      if (mentions.length > 0) {
-        const mentionContents = await Promise.all(
-          mentions.map(async (m) => {
-            try {
-              const markdown = await getPaperMarkdown(m.paperId)
-              return `\n\n[引用论文: ${m.title}]\n${markdown}\n[/引用论文]\n`
-            } catch (err) {
-              console.error(`读取引用论文失败 (ID: ${m.paperId}):`, err)
-              return `\n\n[引用论文: ${m.title}]\n[无法读取论文内容]\n[/引用论文]\n`
-            }
-          })
-        )
-        
-        contextWithMentions = paper.markdown + mentionContents.join('')
+      // 并行执行：获取论文 + 准备对话ID + 获取引用内容
+      const [paper, conversationId, mentionContents] = await Promise.all([
+        db.papers.get(paperId),
+        prepareConversation(content, editingId),
+        mentions.length > 0
+          ? Promise.all(mentions.map(async (m) => {
+              try {
+                const markdown = await getPaperMarkdown(m.paperId)
+                return `\n\n[引用论文: ${m.title}]\n${markdown}\n[/引用论文]\n`
+              } catch (err) {
+                console.error(`读取引用论文失败 (ID: ${m.paperId}):`, err)
+                return `\n\n[引用论文: ${m.title}]\n[无法读取论文内容]\n[/引用论文]\n`
+              }
+            }))
+          : Promise.resolve([])
+      ])
+
+      if (!paper) {
+        throw new Error('论文不存在')
       }
 
-      // 先保存用户消息（编辑模式下延迟保存）
-      const userTimestamp = new Date()
-      if (!editingId) {
-        await db.messages.add({
-          conversationId,
-          role: 'user',
-          content,
-          images,
-          timestamp: userTimestamp
-        })
-      }
+      // 构建上下文
+      const contextWithMentions = mentionContents.length > 0
+        ? paper.markdown + mentionContents.join('')
+        : paper.markdown
 
-      // 刷新消息列表显示用户消息
-      let updatedMessages = await db.messages
+      // 获取历史消息（用于构建对话上下文）
+      const existingMessages = await db.messages
         .where('conversationId')
         .equals(conversationId)
         .sortBy('timestamp')
-      
-      // 编辑模式下，构建历史时排除被编辑消息及之后的内容
-      let messagesForHistory = updatedMessages
+
+      let messagesForHistory = existingMessages
       if (editingId) {
-        const editIndex = updatedMessages.findIndex(m => m.id === editingId)
+        const editIndex = existingMessages.findIndex(m => m.id === editingId)
         if (editIndex !== -1) {
-          messagesForHistory = updatedMessages.slice(0, editIndex)
+          messagesForHistory = existingMessages.slice(0, editIndex)
         }
       }
-      
-      setMessages(updatedMessages)
 
       // 构建历史消息（只保留最近10轮）
       const recentMessages = messagesForHistory.slice(-20)
@@ -280,25 +276,42 @@ export function useChat(paperId: number) {
         content: msg.content
       }))
 
-      // 调用AI (支持流式输出)
+      // 异步保存用户消息（不阻塞API调用）
+      const userTimestamp = new Date()
+      const saveUserMessagePromise = !editingId
+        ? db.messages.add({
+            conversationId,
+            role: 'user',
+            content,
+            images,
+            timestamp: userTimestamp
+          }).then(() => refreshMessages(conversationId))
+        : Promise.resolve()
+
+      // 乐观更新：立即显示用户消息
+      if (!editingId) {
+        setMessages([...existingMessages, {
+          conversationId,
+          role: 'user',
+          content,
+          images,
+          timestamp: userTimestamp
+        } as Message])
+      }
+
+      // 调用AI（与保存用户消息并行）
       const result = await sendMessageToGemini(
         contextWithMentions,
-        content, 
+        content,
         history,
         images,
-        (text) => {
-          // 流式输出回调
-          setStreamingText(text)
-        },
-        (thought) => {
-          // 思考过程回调
-          setStreamingThought(thought)
-        },
-        (startTime) => {
-          // 生成开始回调
-          setStreamingStartTime(startTime)
-        }
+        (text) => setStreamingText(text),
+        (thought) => setStreamingThought(thought),
+        () => {} // 已经提前设置了startTime
       )
+
+      // 确保用户消息已保存
+      await saveUserMessagePromise
 
       // 清空流式文本和时间
       setStreamingText('')
@@ -338,12 +351,12 @@ export function useChat(paperId: number) {
       })
 
       // 刷新消息列表
-      updatedMessages = await db.messages
+      const finalMessages = await db.messages
         .where('conversationId')
         .equals(conversationId)
         .sortBy('timestamp')
 
-      setMessages(updatedMessages)
+      setMessages(finalMessages)
 
       // 清除编辑状态
       if (editingId) {
