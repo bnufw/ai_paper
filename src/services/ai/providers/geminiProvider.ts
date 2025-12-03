@@ -11,7 +11,8 @@ import type { LLMRequest, LLMResponse } from '../../../types/idea'
 /** 扩展的生成配置，包含思考模式 */
 interface ExtendedGenerationConfig extends GenerationConfig {
   thinkingConfig?: {
-    thinkingBudget: number
+    thinkingBudget?: number
+    thinkingLevel?: 'low' | 'high'
     includeThoughts?: boolean
   }
 }
@@ -43,13 +44,26 @@ export async function callGemini(request: LLMRequest): Promise<LLMResponse> {
       generationConfig.maxOutputTokens = request.maxTokens
     }
 
-    // 思考模式配置（仅 Gemini 2.5 Pro 支持）
-    if (request.thinkingConfig && request.model.includes('2.5')) {
-      const budget = request.thinkingConfig.thinkingBudget
-      if (budget !== undefined && budget !== 0) {
-        generationConfig.thinkingConfig = {
-          thinkingBudget: budget,
-          includeThoughts: request.thinkingConfig.includeThoughts ?? false
+    // 思考模式配置
+    if (request.thinkingConfig) {
+      // Gemini 3 Pro 使用 thinkingLevel
+      if (request.model.includes('gemini-3')) {
+        const level = request.thinkingConfig.thinkingLevel
+        if (level) {
+          generationConfig.thinkingConfig = {
+            thinkingLevel: level,
+            includeThoughts: request.thinkingConfig.includeThoughts ?? false
+          }
+        }
+      }
+      // Gemini 2.5 Pro 使用 thinkingBudget
+      else if (request.model.includes('2.5')) {
+        const budget = request.thinkingConfig.thinkingBudget
+        if (budget !== undefined && budget !== 0) {
+          generationConfig.thinkingConfig = {
+            thinkingBudget: budget,
+            includeThoughts: request.thinkingConfig.includeThoughts ?? false
+          }
         }
       }
     }

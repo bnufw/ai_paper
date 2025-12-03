@@ -27,6 +27,8 @@ export interface ThinkingConfig {
   // Gemini 2.5 Pro: thinkingBudget (0-32768, -1=动态)
   thinkingBudget?: number
   includeThoughts?: boolean
+  // Gemini 3 Pro: thinkingLevel (low, high)
+  thinkingLevel?: 'low' | 'high'
   // OpenAI GPT-5: reasoningEffort + verbosity
   reasoningEffort?: 'minimal' | 'low' | 'medium' | 'high' | 'none'
   verbosity?: 'low' | 'medium' | 'high'
@@ -156,10 +158,38 @@ export const PRESET_GENERATORS: ModelConfig[] = [
     }
   },
   {
+    id: 'preset-gemini3-gen',
+    slug: 'Gemini 3 Pro',
+    provider: 'google',
+    model: 'gemini-3-pro-preview',
+    enabled: false,
+    isPreset: true,
+    temperature: 1.0,
+    maxTokens: 12000,
+    thinkingConfig: {
+      thinkingLevel: 'low',
+      includeThoughts: false
+    }
+  },
+  {
     id: 'preset-claude-gen',
     slug: 'Claude 4.5 Sonnet',
     provider: 'openai',  // 通过 OpenAI 兼容端点调用
     model: 'claude-sonnet-4-5-20250929',
+    enabled: false,
+    isPreset: true,
+    temperature: 1,
+    maxTokens: 8192,
+    thinkingConfig: {
+      thinkingType: 'enabled',
+      budgetTokens: 3500
+    }
+  },
+  {
+    id: 'preset-claude-opus-gen',
+    slug: 'Claude 4.5 Opus',
+    provider: 'openai',
+    model: 'claude-opus-4-5-20250929',
     enabled: false,
     isPreset: true,
     temperature: 1,
@@ -183,10 +213,35 @@ export const PRESET_GENERATORS: ModelConfig[] = [
     }
   },
   {
+    id: 'preset-gpt51-gen',
+    slug: 'GPT-5.1',
+    provider: 'openai',
+    model: 'gpt-5.1',
+    enabled: false,
+    isPreset: true,
+    maxTokens: 8000,
+    thinkingConfig: {
+      reasoningEffort: 'low',
+      verbosity: 'low'
+    }
+  },
+  {
     id: 'preset-o4-gen',
     slug: 'o4-mini',
     provider: 'openai',
     model: 'o4-mini',
+    enabled: false,
+    isPreset: true,
+    maxTokens: 8000,
+    thinkingConfig: {
+      reasoningEffort: 'low'
+    }
+  },
+  {
+    id: 'preset-o3-gen',
+    slug: 'o3',
+    provider: 'openai',
+    model: 'o3',
     enabled: false,
     isPreset: true,
     maxTokens: 8000,
@@ -224,10 +279,63 @@ export const PRESET_EVALUATORS: ModelConfig[] = [
     }
   },
   {
+    id: 'preset-gemini3-eval',
+    slug: 'Gemini 3 Pro',
+    provider: 'google',
+    model: 'gemini-3-pro-preview',
+    enabled: false,
+    isPreset: true,
+    temperature: 0.1,
+    maxTokens: 14000,
+    thinkingConfig: {
+      thinkingLevel: 'high',
+      includeThoughts: false
+    }
+  },
+  {
+    id: 'preset-claude-opus-eval',
+    slug: 'Claude 4.5 Opus',
+    provider: 'openai',
+    model: 'claude-opus-4-5-20250929',
+    enabled: false,
+    isPreset: true,
+    temperature: 0.5,
+    maxTokens: 12000,
+    thinkingConfig: {
+      thinkingType: 'enabled',
+      budgetTokens: 5000
+    }
+  },
+  {
+    id: 'preset-gpt51-eval',
+    slug: 'GPT-5.1',
+    provider: 'openai',
+    model: 'gpt-5.1',
+    enabled: false,
+    isPreset: true,
+    maxTokens: 12000,
+    thinkingConfig: {
+      reasoningEffort: 'medium',
+      verbosity: 'low'
+    }
+  },
+  {
     id: 'preset-o4-eval',
     slug: 'o4-mini',
     provider: 'openai',
     model: 'o4-mini',
+    enabled: false,
+    isPreset: true,
+    maxTokens: 12000,
+    thinkingConfig: {
+      reasoningEffort: 'medium'
+    }
+  },
+  {
+    id: 'preset-o3-eval',
+    slug: 'o3',
+    provider: 'openai',
+    model: 'o3',
     enabled: false,
     isPreset: true,
     maxTokens: 12000,

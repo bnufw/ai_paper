@@ -417,6 +417,7 @@ function ModelCard({
     temperature: model.temperature,
     maxTokens: model.maxTokens,
     thinkingBudget: model.thinkingConfig?.thinkingBudget,
+    thinkingLevel: model.thinkingConfig?.thinkingLevel,
     budgetTokens: model.thinkingConfig?.budgetTokens,
     reasoningEffort: model.thinkingConfig?.reasoningEffort,
     enableThinking: model.thinkingConfig?.enableThinking,
@@ -429,6 +430,7 @@ function ModelCard({
       temperature: model.temperature,
       maxTokens: model.maxTokens,
       thinkingBudget: model.thinkingConfig?.thinkingBudget,
+      thinkingLevel: model.thinkingConfig?.thinkingLevel,
       budgetTokens: model.thinkingConfig?.budgetTokens,
       reasoningEffort: model.thinkingConfig?.reasoningEffort,
       enableThinking: model.thinkingConfig?.enableThinking,
@@ -522,7 +524,30 @@ function ModelCard({
           </div>
 
           {/* 思考模式参数 */}
-          {model.provider === 'google' && (
+          {model.provider === 'google' && model.model.includes('gemini-3') && (
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Thinking Level</label>
+              <select
+                value={localConfig.thinkingLevel || 'low'}
+                onChange={e => {
+                  const val = e.target.value as 'low' | 'high'
+                  setLocalConfig(prev => ({ ...prev, thinkingLevel: val }))
+                  onUpdate({
+                    thinkingConfig: {
+                      ...model.thinkingConfig,
+                      thinkingLevel: val
+                    }
+                  })
+                }}
+                className="w-full px-2 py-1 border rounded text-sm text-gray-900"
+              >
+                <option value="low">Low</option>
+                <option value="high">High</option>
+              </select>
+            </div>
+          )}
+
+          {model.provider === 'google' && !model.model.includes('gemini-3') && (
             <div>
               <label className="block text-xs text-gray-500 mb-1">Thinking Budget</label>
               <input

@@ -1,5 +1,5 @@
 import Dexie, { Table } from 'dexie'
-import type { IdeaSession, IdeaWorkflowConfig } from '../../types/idea'
+import type { IdeaSession, IdeaWorkflowConfig, ModelConfig } from '../../types/idea'
 import {
   PRESET_GENERATORS,
   PRESET_EVALUATORS,
@@ -490,12 +490,51 @@ export async function getPaperMarkdown(paperId: number): Promise<string> {
 // ========== Idea 工作流相关函数 ==========
 
 /**
+ * 合并预设模型：将代码中的新预设模型添加到用户配置中
+ */
+function mergePresetModels(
+  userModels: ModelConfig[],
+  presetModels: ModelConfig[]
+): ModelConfig[] {
+  const userIds = new Set(userModels.map(m => m.id))
+  const newPresets = presetModels.filter(p => !userIds.has(p.id))
+
+  if (newPresets.length === 0) {
+    return userModels
+  }
+
+  // 新预设默认禁用，追加到列表末尾
+  return [...userModels, ...newPresets.map(p => ({ ...p, enabled: false }))]
+}
+
+/**
  * 获取 Idea 工作流配置
+ * 自动合并代码中新增的预设模型
  */
 export async function getIdeaWorkflowConfig(): Promise<IdeaWorkflowConfig> {
   const setting = await db.settings.get('idea_workflow_config')
   if (setting?.value) {
-    return JSON.parse(setting.value)
+    const config: IdeaWorkflowConfig = JSON.parse(setting.value)
+
+    // 检查并合并新的预设模型
+    const mergedGenerators = mergePresetModels(config.generators, PRESET_GENERATORS)
+    const mergedEvaluators = mergePresetModels(config.evaluators, PRESET_EVALUATORS)
+
+    // 如果有新模型被添加，自动保存更新后的配置
+    if (
+      mergedGenerators.length !== config.generators.length ||
+      mergedEvaluators.length !== config.evaluators.length
+    ) {
+      const updatedConfig = {
+        ...config,
+        generators: mergedGenerators,
+        evaluators: mergedEvaluators
+      }
+      await saveIdeaWorkflowConfig(updatedConfig)
+      return updatedConfig
+    }
+
+    return config
   }
 
   // 返回默认配置
