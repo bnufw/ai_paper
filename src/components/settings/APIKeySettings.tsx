@@ -183,7 +183,7 @@ export default function APIKeySettings({ onClose }: APIKeySettingsProps) {
                   value={keys.mistral}
                   onChange={(e) => setKeys({ ...keys, mistral: e.target.value })}
                   placeholder="sk-..."
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
                 />
                 <button
                   type="button"
@@ -208,7 +208,7 @@ export default function APIKeySettings({ onClose }: APIKeySettingsProps) {
                   value={keys.gemini}
                   onChange={(e) => setKeys({ ...keys, gemini: e.target.value })}
                   placeholder="AI..."
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
                 />
                 <button
                   type="button"
@@ -234,7 +234,7 @@ export default function APIKeySettings({ onClose }: APIKeySettingsProps) {
                   ...geminiSettings,
                   model: e.target.value as 'gemini-2.5-pro' | 'gemini-3-pro-preview'
                 })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
               >
                 <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
                 <option value="gemini-3-pro-preview">Gemini 3.0 Pro Preview</option>
@@ -332,7 +332,7 @@ export default function APIKeySettings({ onClose }: APIKeySettingsProps) {
                     ...geminiSettings,
                     thinkingLevel: e.target.value as 'LOW' | 'HIGH'
                   })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
                 >
                   <option value="LOW">LOW - 快速思考</option>
                   <option value="HIGH">HIGH - 深度思考</option>

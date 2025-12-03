@@ -226,3 +226,52 @@ async function copyDirectory(
 export async function getDirectoryPath(handle: FileSystemDirectoryHandle): Promise<string> {
   return handle.name
 }
+
+/**
+ * 保存分组笔记
+ * 存储位置: {rootPath}/{groupName}/group_note.md
+ */
+export async function saveGroupNote(groupName: string, content: string): Promise<void> {
+  const rootHandle = await getDirectoryHandle()
+  if (!rootHandle) {
+    throw new Error('未设置存储目录')
+  }
+
+  const groupDirHandle = await createDirectory(rootHandle, groupName)
+  await writeTextFile(groupDirHandle, 'group_note.md', content)
+}
+
+/**
+ * 加载分组笔记
+ */
+export async function loadGroupNote(groupName: string): Promise<string | null> {
+  const rootHandle = await getDirectoryHandle()
+  if (!rootHandle) {
+    return null
+  }
+
+  try {
+    const groupDirHandle = await rootHandle.getDirectoryHandle(groupName)
+    return await readTextFile(groupDirHandle, 'group_note.md')
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 检查分组笔记是否存在
+ */
+export async function hasGroupNote(groupName: string): Promise<boolean> {
+  const rootHandle = await getDirectoryHandle()
+  if (!rootHandle) {
+    return false
+  }
+
+  try {
+    const groupDirHandle = await rootHandle.getDirectoryHandle(groupName)
+    await groupDirHandle.getFileHandle('group_note.md')
+    return true
+  } catch {
+    return false
+  }
+}

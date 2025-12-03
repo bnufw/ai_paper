@@ -111,7 +111,7 @@ export default function ConversationList({
                     onChange={(e) => setEditingTitle(e.target.value)}
                     onKeyDown={(e) => handleKeyDown(e, conv.id!)}
                     onBlur={() => handleSaveEdit(conv.id!)}
-                    className="px-2 py-1 border rounded text-sm w-40"
+                    className="px-2 py-1 border rounded text-sm w-40 text-gray-900"
                     autoFocus
                     onClick={(e) => e.stopPropagation()}
                   />

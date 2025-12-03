@@ -50,7 +50,7 @@ export default function NoteEditor({ content, onChange, onSave, mode }: NoteEdit
           <textarea
             value={content}
             onChange={(e) => onChange(e.target.value)}
-            className="w-full h-full p-4 font-mono text-sm resize-none focus:outline-none"
+            className="w-full h-full p-4 font-mono text-sm resize-none focus:outline-none text-gray-900"
             placeholder="在此编写笔记..."
           />
         ) : (

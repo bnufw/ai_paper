@@ -528,7 +528,7 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
               placeholder="输入您的问题... (Shift+Enter换行,Enter发送)"
-              className="flex-1 border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+              className="flex-1 border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none text-gray-900"
               rows={3}
               disabled={loading}
             />

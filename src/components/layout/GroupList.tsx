@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { type Paper, type PaperGroup } from '../../services/storage/db'
+import GroupNoteModal from '../note/GroupNoteModal'
 
 interface GroupListProps {
   groups: PaperGroup[]
@@ -27,6 +28,7 @@ export default function GroupList({
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set())
   const [editingGroupId, setEditingGroupId] = useState<number | null>(null)
   const [editingName, setEditingName] = useState('')
+  const [noteModalGroup, setNoteModalGroup] = useState<string | null>(null)
 
   // 切换分组展开/折叠
   const toggleGroup = (groupId: number) => {
@@ -89,37 +91,51 @@ export default function GroupList({
       </div>
 
       {/* 未分类 */}
-      {uncategorizedPapers.length > 0 && (
-        <div className="mb-2">
-          <div
-            onClick={() => toggleGroup(-1)}
-            className="px-3 py-2 cursor-pointer hover:bg-gray-700 flex items-center justify-between"
-          >
-            <div className="flex items-center">
+      <div className="mb-2">
+        <div
+          onClick={() => uncategorizedPapers.length > 0 && toggleGroup(-1)}
+          className={`px-3 py-2 flex items-center justify-between group ${
+            uncategorizedPapers.length > 0 ? 'cursor-pointer hover:bg-gray-700' : ''
+          }`}
+        >
+          <div className="flex items-center">
+            {uncategorizedPapers.length > 0 && (
               <span className="mr-2">{expandedGroups.has(-1) ? '▼' : '▶'}</span>
-              <span className="text-sm text-gray-400">未分类</span>
-              <span className="ml-2 text-xs text-gray-500">({uncategorizedPapers.length})</span>
-            </div>
+            )}
+            {uncategorizedPapers.length === 0 && <span className="mr-2 opacity-0">▶</span>}
+            <span className="text-sm text-gray-400">未分类</span>
+            <span className="ml-2 text-xs text-gray-500">({uncategorizedPapers.length})</span>
           </div>
-          
-          {expandedGroups.has(-1) && (
-            <div className="pl-6 space-y-1">
-              {uncategorizedPapers.map(paper => (
-                <PaperItem
-                  key={paper.id}
-                  paper={paper}
-                  isSelected={currentPaperId === paper.id}
-                  onSelect={() => onSelectPaper(paper.id!)}
-                  onDelete={(e) => {
-                    e.stopPropagation()
-                    onDeletePaper(paper.id!)
-                  }}
-                />
-              ))}
-            </div>
-          )}
+          {/* 未分类笔记按钮 */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              setNoteModalGroup('未分类')
+            }}
+            className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-white"
+            title="分组笔记"
+          >
+            📝
+          </button>
         </div>
-      )}
+
+        {expandedGroups.has(-1) && uncategorizedPapers.length > 0 && (
+          <div className="pl-6 space-y-1">
+            {uncategorizedPapers.map(paper => (
+              <PaperItem
+                key={paper.id}
+                paper={paper}
+                isSelected={currentPaperId === paper.id}
+                onSelect={() => onSelectPaper(paper.id!)}
+                onDelete={(e) => {
+                  e.stopPropagation()
+                  onDeletePaper(paper.id!)
+                }}
+              />
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* 分组列表 */}
       {groups.map(group => {
@@ -161,6 +177,16 @@ export default function GroupList({
 
               {/* 分组操作按钮 */}
               <div className="opacity-0 group-hover:opacity-100 flex items-center ml-2">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setNoteModalGroup(group.name)
+                  }}
+                  className="text-gray-400 hover:text-white mr-2"
+                  title="分组笔记"
+                >
+                  📝
+                </button>
                 {onGenerateIdea && (
                   <button
                     onClick={(e) => {
@@ -209,6 +235,13 @@ export default function GroupList({
           </div>
         )
       })}
+
+      {/* 分组笔记弹窗 */}
+      <GroupNoteModal
+        isOpen={noteModalGroup !== null}
+        onClose={() => setNoteModalGroup(null)}
+        groupName={noteModalGroup || ''}
+      />
     </div>
   )
 }
