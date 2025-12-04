@@ -292,3 +292,52 @@ export async function hasGroupNote(groupName: string): Promise<boolean> {
     return false
   }
 }
+
+/**
+ * 保存分组领域知识
+ * 存储位置: {rootPath}/{groupName}/domain_knowledge.md
+ */
+export async function saveDomainKnowledge(groupName: string, content: string): Promise<void> {
+  const rootHandle = await getDirectoryHandle()
+  if (!rootHandle) {
+    throw new Error('未设置存储目录')
+  }
+
+  const groupDirHandle = await createDirectory(rootHandle, groupName)
+  await writeTextFile(groupDirHandle, 'domain_knowledge.md', content)
+}
+
+/**
+ * 加载分组领域知识
+ */
+export async function loadDomainKnowledge(groupName: string): Promise<string | null> {
+  const rootHandle = await getDirectoryHandle()
+  if (!rootHandle) {
+    return null
+  }
+
+  try {
+    const groupDirHandle = await rootHandle.getDirectoryHandle(groupName)
+    return await readTextFile(groupDirHandle, 'domain_knowledge.md')
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 检查分组领域知识是否存在
+ */
+export async function hasDomainKnowledge(groupName: string): Promise<boolean> {
+  const rootHandle = await getDirectoryHandle()
+  if (!rootHandle) {
+    return false
+  }
+
+  try {
+    const groupDirHandle = await rootHandle.getDirectoryHandle(groupName)
+    await groupDirHandle.getFileHandle('domain_knowledge.md')
+    return true
+  } catch {
+    return false
+  }
+}

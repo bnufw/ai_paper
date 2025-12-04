@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react'
 import { db, type Message, type Conversation, type MessageImage, deleteConversation as dbDeleteConversation, renameConversation as dbRenameConversation, exportConversation as dbExportConversation, getPaperMarkdown, deleteMessagesAfter } from '../services/storage/db'
 import { sendMessageToGemini } from '../services/ai/geminiClient'
+import { loadDomainKnowledge } from '../services/knowledge/domainKnowledgeService'
 
 // 引用解析正则
 const MENTION_PATTERN = /@\[([^\]]+)\]\(paperId:(\d+)\)/g
+// 领域知识引用（不使用 g 标志避免 lastIndex 问题）
+const DOMAIN_KNOWLEDGE_PATTERN = /@领域知识/
 
 /**
  * 解析消息中的论文引用
@@ -229,8 +232,11 @@ export function useChat(paperId: number) {
         throw new Error('单条消息最多引用3篇论文')
       }
 
-      // 并行执行：获取论文 + 准备对话ID + 获取引用内容
-      const [paper, conversationId, mentionContents] = await Promise.all([
+      // 检查是否引用了领域知识
+      const hasDomainKnowledgeRef = DOMAIN_KNOWLEDGE_PATTERN.test(content)
+
+      // 并行执行：获取论文 + 准备对话ID + 获取引用内容 + 获取领域知识
+      const [paper, conversationId, mentionContents, domainKnowledge] = await Promise.all([
         db.papers.get(paperId),
         prepareConversation(content, editingId),
         mentions.length > 0
@@ -243,7 +249,19 @@ export function useChat(paperId: number) {
                 return `\n\n[引用论文: ${m.title}]\n[无法读取论文内容]\n[/引用论文]\n`
               }
             }))
-          : Promise.resolve([])
+          : Promise.resolve([]),
+        hasDomainKnowledgeRef
+          ? (async () => {
+              const p = await db.papers.get(paperId)
+              if (p?.groupId) {
+                const group = await db.groups.get(p.groupId)
+                if (group) {
+                  return await loadDomainKnowledge(group.name)
+                }
+              }
+              return null
+            })()
+          : Promise.resolve(null)
       ])
 
       if (!paper) {
@@ -251,9 +269,17 @@ export function useChat(paperId: number) {
       }
 
       // 构建上下文
-      const contextWithMentions = mentionContents.length > 0
-        ? paper.markdown + mentionContents.join('')
-        : paper.markdown
+      let contextWithMentions = paper.markdown
+
+      // 添加领域知识
+      if (domainKnowledge) {
+        contextWithMentions += `\n\n---\n## 领域知识\n${domainKnowledge}\n---`
+      }
+
+      // 添加引用论文
+      if (mentionContents.length > 0) {
+        contextWithMentions += mentionContents.join('')
+      }
 
       // 获取历史消息（用于构建对话上下文）
       const existingMessages = await db.messages

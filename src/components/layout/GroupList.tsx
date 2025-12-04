@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { type Paper, type PaperGroup } from '../../services/storage/db'
 import GroupNoteModal from '../note/GroupNoteModal'
+import DomainKnowledgeModal from '../knowledge/DomainKnowledgeModal'
 
 interface GroupListProps {
   groups: PaperGroup[]
@@ -29,6 +30,7 @@ export default function GroupList({
   const [editingGroupId, setEditingGroupId] = useState<number | null>(null)
   const [editingName, setEditingName] = useState('')
   const [noteModalGroup, setNoteModalGroup] = useState<string | null>(null)
+  const [knowledgeModalGroup, setKnowledgeModalGroup] = useState<string | null>(null)
 
   // 切换分组展开/折叠
   const toggleGroup = (groupId: number) => {
@@ -180,6 +182,16 @@ export default function GroupList({
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
+                    setKnowledgeModalGroup(group.name)
+                  }}
+                  className="text-blue-400 hover:text-blue-300 mr-2"
+                  title="领域知识"
+                >
+                  📚
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
                     setNoteModalGroup(group.name)
                   }}
                   className="text-gray-400 hover:text-white mr-2"
@@ -241,6 +253,13 @@ export default function GroupList({
         isOpen={noteModalGroup !== null}
         onClose={() => setNoteModalGroup(null)}
         groupName={noteModalGroup || ''}
+      />
+
+      {/* 领域知识弹窗 */}
+      <DomainKnowledgeModal
+        isOpen={knowledgeModalGroup !== null}
+        onClose={() => setKnowledgeModalGroup(null)}
+        groupName={knowledgeModalGroup || ''}
       />
     </div>
   )
