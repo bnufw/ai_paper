@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI, GoogleGenerativeAIFetchError } from '@google/generative-ai'
+import { GoogleGenAI } from '@google/genai'
 import { getAPIKey, getGeminiSettings, type MessageImage } from '../storage/db'
 
 /**
@@ -36,42 +36,32 @@ export async function sendMessageToGemini(
   }
 
   const settings = await getGeminiSettings()
-  const genAI = new GoogleGenerativeAI(apiKey)
-  
-  // 模型支持思考模式的列表
-  const MODELS_SUPPORTING_THINKING_BUDGET = ['gemini-2.5-pro']
-  const MODELS_SUPPORTING_THINKING_LEVEL = ['gemini-3-pro-preview']
-  
-  // 构建模型配置(包括tools)
-  const modelConfig: any = {
-    model: settings.model === 'gemini-3-pro-preview' ? 'gemini-3-pro-preview' : 'gemini-2.5-pro'
-  }
+  const ai = new GoogleGenAI({ apiKey })
 
-  // 添加联网搜索工具(在模型级别配置)
-  if (settings.useSearch) {
-    modelConfig.tools = [{ googleSearch: {} }]
-  }
-
-  const model = genAI.getGenerativeModel(modelConfig)
-
-  // 构建对话配置(temperature等生成参数)
-  const generationConfig: any = {
+  // 构建生成配置
+  const config: any = {
     temperature: settings.temperature
   }
 
+  // 添加联网搜索工具
+  if (settings.useSearch) {
+    config.tools = [{ googleSearch: {} }]
+  }
+
   // 配置思考模式：根据模型类型选择thinkingBudget或thinkingLevel
-  if (MODELS_SUPPORTING_THINKING_LEVEL.includes(settings.model)) {
-    // Gemini 3 Pro使用thinkingLevel
+  // Gemini 3.x 使用 thinkingLevel，Gemini 2.5 使用 thinkingBudget
+  if (settings.model.includes('gemini-3')) {
+    // Gemini 3 Pro使用thinkingLevel（小写值）
     if (settings.thinkingLevel) {
-      generationConfig.thinkingConfig = {
-        thinkingLevel: settings.thinkingLevel,
+      config.thinkingConfig = {
+        thinkingLevel: settings.thinkingLevel.toLowerCase(), // 'LOW' -> 'low', 'HIGH' -> 'high'
         includeThoughts: settings.showThoughts
       }
     }
-  } else if (MODELS_SUPPORTING_THINKING_BUDGET.includes(settings.model)) {
+  } else if (settings.model.includes('2.5')) {
     // Gemini 2.5 Pro使用thinkingBudget
     if (settings.thinkingBudget > 0) {
-      generationConfig.thinkingConfig = {
+      config.thinkingConfig = {
         thinkingBudget: settings.thinkingBudget,
         includeThoughts: settings.showThoughts
       }
@@ -94,19 +84,21 @@ export async function sendMessageToGemini(
     }))
   ]
 
-  const chat = model.startChat({
-    history: chatHistory as any,
-    generationConfig
+  // 创建聊天会话
+  const chat = ai.chats.create({
+    model: settings.model,
+    config,
+    history: chatHistory as any
   })
 
   // 构建用户消息parts(支持多模态)
   const userParts: any[] = []
-  
+
   // 添加文本内容
   if (userMessage.trim()) {
     userParts.push({ text: userMessage })
   }
-  
+
   // 添加图片内容
   if (images && images.length > 0) {
     for (const img of images) {
@@ -129,24 +121,27 @@ export async function sendMessageToGemini(
   try {
     // 流式输出
     if (settings.streaming && onStream) {
-      const result = await chat.sendMessageStream(userParts)
-      let fullText = ''
-      
       // 标记生成开始
       generationStartTime = new Date()
       if (onGenerationStart) {
         onGenerationStart(generationStartTime)
       }
-      
-      for await (const chunk of result.stream) {
+
+      const stream = await chat.sendMessageStream({
+        message: userParts
+      })
+
+      let fullText = ''
+
+      for await (const chunk of stream) {
         // 处理候选内容
         const candidate = chunk.candidates?.[0]
-        
+
         if (candidate) {
           // 提取grounding元数据
           if (candidate.groundingMetadata) {
             groundingMetadata = candidate.groundingMetadata
-            
+
             // 提取搜索查询
             if (groundingMetadata.webSearchQueries) {
               webSearchQueries = groundingMetadata.webSearchQueries
@@ -156,7 +151,7 @@ export async function sendMessageToGemini(
           // 处理内容parts
           if (candidate.content?.parts) {
             for (const part of candidate.content.parts) {
-              // @ts-ignore - 检查是否为思考内容
+              // 检查是否为思考内容
               if (part.thought) {
                 thoughts += part.text || ''
                 if (onThought) {
@@ -174,12 +169,12 @@ export async function sendMessageToGemini(
           }
         }
       }
-      
+
       generationEndTime = new Date()
-      
+
       // 思考时间 = 从生成开始到最后一个思考内容的时间差
-      const thinkingTimeMs = generationStartTime && thinkingEndTime 
-        ? thinkingEndTime - generationStartTime.getTime() 
+      const thinkingTimeMs = generationStartTime && thinkingEndTime
+        ? thinkingEndTime - generationStartTime.getTime()
         : undefined
 
       return {
@@ -191,20 +186,22 @@ export async function sendMessageToGemini(
         groundingMetadata,
         webSearchQueries: webSearchQueries.length > 0 ? webSearchQueries : undefined
       }
-    } 
+    }
     // 非流式输出
     else {
       generationStartTime = new Date()
       if (onGenerationStart) {
         onGenerationStart(generationStartTime)
       }
-      
-      const result = await chat.sendMessage(userParts)
-      
+
+      const result = await chat.sendMessage({
+        message: userParts
+      })
+
       generationEndTime = new Date()
-      
+
       // 提取grounding元数据
-      const candidate = result.response.candidates?.[0]
+      const candidate = result.candidates?.[0]
       if (candidate?.groundingMetadata) {
         groundingMetadata = candidate.groundingMetadata
         if (groundingMetadata.webSearchQueries) {
@@ -216,7 +213,6 @@ export async function sendMessageToGemini(
       let contentText = ''
       if (candidate?.content?.parts) {
         for (const part of candidate.content.parts) {
-          // @ts-ignore
           if (part.thought) {
             thoughts += part.text || ''
             thinkingEndTime = Date.now()
@@ -227,12 +223,12 @@ export async function sendMessageToGemini(
       }
 
       if (!contentText) {
-        contentText = result.response.text()
+        contentText = result.text || ''
       }
 
       // 思考时间 = 从生成开始到最后一个思考内容的时间差
-      const thinkingTimeMs = generationStartTime && thinkingEndTime 
-        ? thinkingEndTime - generationStartTime.getTime() 
+      const thinkingTimeMs = generationStartTime && thinkingEndTime
+        ? thinkingEndTime - generationStartTime.getTime()
         : undefined
 
       return {
@@ -245,13 +241,12 @@ export async function sendMessageToGemini(
         webSearchQueries: webSearchQueries.length > 0 ? webSearchQueries : undefined
       }
     }
-  } catch (error) {
-    if (error instanceof GoogleGenerativeAIFetchError) {
-      if (error.status) {
-        throw new Error(`API请求失败 (${error.status}): ${error.statusText || '未知错误'}`)
-      } else {
-        throw new Error('网络连接失败')
-      }
+  } catch (error: any) {
+    // 处理 API 错误
+    if (error.status) {
+      throw new Error(`API请求失败 (${error.status}): ${error.statusText || error.message || '未知错误'}`)
+    } else if (error.message?.includes('fetch')) {
+      throw new Error('网络连接失败')
     }
     throw error
   }

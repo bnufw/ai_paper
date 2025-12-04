@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import { GoogleGenAI } from '@google/genai'
 import { getAPIKey, getGeminiSettings } from '../storage/db'
 import { loadMarkdownFromLocal } from '../storage/paperStorage'
 import { saveNoteToLocal, loadNoteFromLocal, hasNoteLocal, appendNoteToLocal } from '../storage/paperStorage'
@@ -36,19 +36,14 @@ export async function generateNote(
   }
 
   const settings = await getGeminiSettings()
-  const genAI = new GoogleGenerativeAI(apiKey)
+  const ai = new GoogleGenAI({ apiKey })
 
   // 读取笔记提示词作为系统指令
   const systemPrompt = await loadPrompt('note.md')
 
-  const model = genAI.getGenerativeModel({
-    model: settings.model === 'gemini-3-pro-preview' ? 'gemini-3-pro-preview' : 'gemini-2.5-pro',
-    systemInstruction: systemPrompt
-  })
-
   // 读取论文内容
   const paperContent = await loadMarkdownFromLocal(localPath)
-  
+
   if (!paperContent) {
     throw new Error('无法读取论文内容')
   }
@@ -57,16 +52,28 @@ export async function generateNote(
 
   // 流式输出
   if (settings.streaming && onStream) {
-    const result = await model.generateContentStream(paperContent)
+    const response = await ai.models.generateContentStream({
+      model: settings.model,
+      contents: paperContent,
+      config: {
+        systemInstruction: systemPrompt
+      }
+    })
 
-    for await (const chunk of result.stream) {
-      const chunkText = chunk.text()
+    for await (const chunk of response) {
+      const chunkText = chunk.text || ''
       fullText += chunkText
       onStream(fullText)
     }
   } else {
-    const result = await model.generateContent(paperContent)
-    fullText = result.response.text()
+    const response = await ai.models.generateContent({
+      model: settings.model,
+      contents: paperContent,
+      config: {
+        systemInstruction: systemPrompt
+      }
+    })
+    fullText = response.text || ''
   }
 
   // 保存笔记到本地
@@ -135,31 +142,37 @@ export async function organizeNote(
   }
 
   const settings = await getGeminiSettings()
-  const genAI = new GoogleGenerativeAI(apiKey)
+  const ai = new GoogleGenAI({ apiKey })
 
   const systemPrompt = await loadPrompt('organize_note.md')
-
-  const model = genAI.getGenerativeModel({
-    model: 'gemini-2.5-pro',
-    systemInstruction: systemPrompt,
-    generationConfig: {
-      temperature: 0.1
-    }
-  })
 
   let fullText = ''
 
   if (settings.streaming && onStream) {
-    const result = await model.generateContentStream(currentContent)
+    const response = await ai.models.generateContentStream({
+      model: 'gemini-2.5-pro',
+      contents: currentContent,
+      config: {
+        systemInstruction: systemPrompt,
+        temperature: 0.1
+      }
+    })
 
-    for await (const chunk of result.stream) {
-      const chunkText = chunk.text()
+    for await (const chunk of response) {
+      const chunkText = chunk.text || ''
       fullText += chunkText
       onStream(fullText)
     }
   } else {
-    const result = await model.generateContent(currentContent)
-    fullText = result.response.text()
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-pro',
+      contents: currentContent,
+      config: {
+        systemInstruction: systemPrompt,
+        temperature: 0.1
+      }
+    })
+    fullText = response.text || ''
   }
 
   await saveNoteToLocal(localPath, fullText)

@@ -3,19 +3,9 @@
  * 复用现有 geminiClient.ts 的逻辑，适配工作流场景
  */
 
-import { GoogleGenerativeAI, GoogleGenerativeAIFetchError } from '@google/generative-ai'
-import type { GenerationConfig } from '@google/generative-ai'
+import { GoogleGenAI } from '@google/genai'
 import { getAPIKey } from '../../storage/db'
 import type { LLMRequest, LLMResponse } from '../../../types/idea'
-
-/** 扩展的生成配置，包含思考模式 */
-interface ExtendedGenerationConfig extends GenerationConfig {
-  thinkingConfig?: {
-    thinkingBudget?: number
-    thinkingLevel?: 'low' | 'high'
-    includeThoughts?: boolean
-  }
-}
 
 /**
  * 调用 Gemini 模型
@@ -28,30 +18,27 @@ export async function callGemini(request: LLMRequest): Promise<LLMResponse> {
 
   try {
     // 创建客户端
-    const genAI = new GoogleGenerativeAI(apiKey)
-
-    // 获取模型
-    const model = genAI.getGenerativeModel({ model: request.model })
+    const ai = new GoogleGenAI({ apiKey })
 
     // 生成配置
-    const generationConfig: ExtendedGenerationConfig = {}
+    const config: any = {}
 
     if (request.temperature !== undefined) {
-      generationConfig.temperature = request.temperature
+      config.temperature = request.temperature
     }
 
     if (request.maxTokens !== undefined) {
-      generationConfig.maxOutputTokens = request.maxTokens
+      config.maxOutputTokens = request.maxTokens
     }
 
     // 思考模式配置
     if (request.thinkingConfig) {
-      // Gemini 3 Pro 使用 thinkingLevel
+      // Gemini 3 Pro 使用 thinkingLevel（小写值）
       if (request.model.includes('gemini-3')) {
         const level = request.thinkingConfig.thinkingLevel
         if (level) {
-          generationConfig.thinkingConfig = {
-            thinkingLevel: level,
+          config.thinkingConfig = {
+            thinkingLevel: level.toLowerCase(), // 'LOW' -> 'low', 'HIGH' -> 'high'
             includeThoughts: request.thinkingConfig.includeThoughts ?? false
           }
         }
@@ -60,7 +47,7 @@ export async function callGemini(request: LLMRequest): Promise<LLMResponse> {
       else if (request.model.includes('2.5')) {
         const budget = request.thinkingConfig.thinkingBudget
         if (budget !== undefined && budget !== 0) {
-          generationConfig.thinkingConfig = {
+          config.thinkingConfig = {
             thinkingBudget: budget,
             includeThoughts: request.thinkingConfig.includeThoughts ?? false
           }
@@ -68,18 +55,16 @@ export async function callGemini(request: LLMRequest): Promise<LLMResponse> {
       }
     }
 
-    // 构建消息
-    const contents = [
-      {
-        role: 'user',
-        parts: [{ text: request.systemPrompt + '\n\n' + request.userMessage }]
-      }
-    ]
+    // 检查是否被取消
+    if (request.signal?.aborted) {
+      return { content: '', error: '请求已取消' }
+    }
 
     // 调用 API
-    const result = await model.generateContent({
-      contents,
-      generationConfig
+    const response = await ai.models.generateContent({
+      model: request.model,
+      contents: request.systemPrompt + '\n\n' + request.userMessage,
+      config
     })
 
     // 检查是否被取消
@@ -88,7 +73,6 @@ export async function callGemini(request: LLMRequest): Promise<LLMResponse> {
     }
 
     // 解析响应
-    const response = result.response
     const candidate = response.candidates?.[0]
 
     let content = ''
@@ -96,7 +80,7 @@ export async function callGemini(request: LLMRequest): Promise<LLMResponse> {
 
     if (candidate?.content?.parts) {
       for (const part of candidate.content.parts) {
-        // @ts-ignore - 检查是否为思考内容
+        // 检查是否为思考内容
         if (part.thought) {
           thinkingContent += part.text || ''
         } else {
@@ -106,23 +90,22 @@ export async function callGemini(request: LLMRequest): Promise<LLMResponse> {
     }
 
     if (!content) {
-      content = response.text()
+      content = response.text || ''
     }
 
     return {
       content,
       thinkingContent: thinkingContent || undefined
     }
-  } catch (error) {
+  } catch (error: any) {
     if (request.signal?.aborted) {
       return { content: '', error: '请求已取消' }
     }
 
-    if (error instanceof GoogleGenerativeAIFetchError) {
-      const status = error.status ? ` (${error.status})` : ''
-      return { content: '', error: `Gemini API 请求失败${status}: ${error.message}` }
+    if (error.status) {
+      return { content: '', error: `Gemini API 请求失败 (${error.status}): ${error.message}` }
     }
 
-    return { content: '', error: `Gemini 调用失败: ${(error as Error).message}` }
+    return { content: '', error: `Gemini 调用失败: ${error.message}` }
   }
 }
