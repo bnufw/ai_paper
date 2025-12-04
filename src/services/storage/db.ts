@@ -6,6 +6,7 @@ import {
   PRESET_SUMMARIZER,
   DEFAULT_ENDPOINTS
 } from '../../types/idea'
+import { getDirectoryHandle, readTextFile } from './fileSystem'
 
 // 论文分组类型
 export interface PaperGroup {
@@ -454,23 +455,19 @@ export async function getPaperMarkdown(paperId: number): Promise<string> {
 
   // 优先从本地文件读取
   if (paper.localPath) {
-    const rootPath = await getStorageRootPath()
-    if (rootPath) {
+    const rootHandle = await getDirectoryHandle()
+    if (rootHandle) {
       try {
-        const paperMdPath = `${rootPath}/${paper.localPath}/paper.md`
-        // 使用File System Access API读取文件
-        const response = await fetch(paperMdPath)
-        if (response.ok) {
-          let content = await response.text()
-          
-          // 大文件截断(超过50KB取前50KB)
-          const MAX_SIZE = 50 * 1024
-          if (content.length > MAX_SIZE) {
-            content = content.substring(0, MAX_SIZE) + '\n\n[... 内容过长,已截断 ...]'
-          }
-          
-          return content
+        const paperDirHandle = await rootHandle.getDirectoryHandle(paper.localPath)
+        let content = await readTextFile(paperDirHandle, 'paper.md')
+
+        // 大文件截断(超过50KB取前50KB)
+        const MAX_SIZE = 50 * 1024
+        if (content.length > MAX_SIZE) {
+          content = content.substring(0, MAX_SIZE) + '\n\n[... 内容过长,已截断 ...]'
         }
+
+        return content
       } catch (err) {
         console.warn('无法从本地读取paper.md,回退到数据库:', err)
       }
@@ -483,7 +480,7 @@ export async function getPaperMarkdown(paperId: number): Promise<string> {
   if (markdown.length > MAX_SIZE) {
     markdown = markdown.substring(0, MAX_SIZE) + '\n\n[... 内容过长,已截断 ...]'
   }
-  
+
   return markdown
 }
 
