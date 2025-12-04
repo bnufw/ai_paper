@@ -6,7 +6,7 @@ import {
   PRESET_SUMMARIZER,
   DEFAULT_ENDPOINTS
 } from '../../types/idea'
-import { getDirectoryHandle, readTextFile } from './fileSystem'
+import { getDirectoryHandle, getDirectory, readTextFile } from './fileSystem'
 
 // 论文分组类型
 export interface PaperGroup {
@@ -458,7 +458,7 @@ export async function getPaperMarkdown(paperId: number): Promise<string> {
     const rootHandle = await getDirectoryHandle()
     if (rootHandle) {
       try {
-        const paperDirHandle = await rootHandle.getDirectoryHandle(paper.localPath)
+        const paperDirHandle = await getDirectory(rootHandle, paper.localPath)
         let content = await readTextFile(paperDirHandle, 'paper.md')
 
         // 大文件截断(超过50KB取前50KB)

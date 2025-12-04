@@ -111,6 +111,23 @@ export async function createDirectory(
 }
 
 /**
+ * 获取目录（支持嵌套，不创建）
+ */
+export async function getDirectory(
+  rootHandle: FileSystemDirectoryHandle,
+  path: string
+): Promise<FileSystemDirectoryHandle> {
+  const parts = path.split('/').filter(Boolean)
+  let currentHandle = rootHandle
+
+  for (const part of parts) {
+    currentHandle = await currentHandle.getDirectoryHandle(part)
+  }
+
+  return currentHandle
+}
+
+/**
  * 写入文本文件
  */
 export async function writeTextFile(
