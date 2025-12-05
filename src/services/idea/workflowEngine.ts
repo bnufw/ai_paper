@@ -23,7 +23,7 @@ import {
   saveIdea,
   saveReview,
   saveBestIdea,
-  collectGroupNotes,
+  collectGeneratorContext,
   formatIdeasForReview,
   formatForSummarizer
 } from './workflowStorage'
@@ -207,10 +207,10 @@ export class IdeaWorkflowEngine {
 
       // 计算总任务数
       const totalTasks = enabledGenerators.length + enabledEvaluators.length + 1
-      this.updateProgress(0, totalTasks, '收集论文笔记')
+      this.updateProgress(0, totalTasks, '收集上下文')
 
-      // 收集论文笔记
-      const notes = await collectGroupNotes(groupId)
+      // 收集生成器上下文（领域知识 + 论文笔记 + 用户研究方向）
+      const context = await collectGeneratorContext(groupId, groupName, config.userIdea || '')
 
       if (signal.aborted) return
 
@@ -235,7 +235,7 @@ export class IdeaWorkflowEngine {
           this.updateModelStatus('generators', gen.slug, 'running')
 
           try {
-            const request = buildLLMRequest(gen, generatorPrompt, notes, signal)
+            const request = buildLLMRequest(gen, generatorPrompt, context, signal)
             const response = await callLLM(request)
 
             if (signal.aborted) return

@@ -3,13 +3,14 @@ import { getAPIKey, getGeminiSettings, type MessageImage } from '../storage/db'
 
 /**
  * 使用Gemini API进行对话
- * @param paperContext 论文内容作为上下文
+ * @param paperContext 论文内容作为上下文（当 cachedContentName 有效时可为空）
  * @param userMessage 用户消息
  * @param history 对话历史
  * @param images 用户上传的图片(可选)
  * @param onStream 流式输出回调
  * @param onThought 思考过程回调
  * @param onGenerationStart 生成开始回调
+ * @param cachedContentName 缓存内容名称（优先使用缓存）
  * @returns AI回复及元数据
  */
 export async function sendMessageToGemini(
@@ -19,7 +20,8 @@ export async function sendMessageToGemini(
   images?: MessageImage[],
   onStream?: (text: string) => void,
   onThought?: (thought: string) => void,
-  onGenerationStart?: (startTime: Date) => void
+  onGenerationStart?: (startTime: Date) => void,
+  cachedContentName?: string | null
 ): Promise<{
   content: string
   thoughts?: string
@@ -41,6 +43,11 @@ export async function sendMessageToGemini(
   // 构建生成配置
   const config: any = {
     temperature: settings.temperature
+  }
+
+  // 使用缓存内容（优先级最高）
+  if (cachedContentName) {
+    config.cachedContent = cachedContentName
   }
 
   // 添加联网搜索工具
@@ -69,20 +76,26 @@ export async function sendMessageToGemini(
   }
 
   // 构建对话历史
-  const chatHistory = [
-    {
-      role: 'user',
-      parts: [{ text: `这是一篇学术论文的内容:\n\n${paperContext}\n\n请基于这篇论文回答我的问题。` }]
-    },
-    {
-      role: 'model',
-      parts: [{ text: '好的，我已经阅读了这篇论文，请问有什么问题？' }]
-    },
-    ...history.map(msg => ({
-      role: msg.role === 'user' ? 'user' : 'model',
-      parts: [{ text: msg.content }]
-    }))
-  ]
+  // 使用缓存时，论文内容已在缓存中，只需传递后续对话历史
+  const chatHistory = cachedContentName
+    ? history.map(msg => ({
+        role: msg.role === 'user' ? 'user' : 'model',
+        parts: [{ text: msg.content }]
+      }))
+    : [
+        {
+          role: 'user',
+          parts: [{ text: `这是一篇学术论文的内容:\n\n${paperContext}\n\n请基于这篇论文回答我的问题。` }]
+        },
+        {
+          role: 'model',
+          parts: [{ text: '好的，我已经阅读了这篇论文，请问有什么问题？' }]
+        },
+        ...history.map(msg => ({
+          role: msg.role === 'user' ? 'user' : 'model',
+          parts: [{ text: msg.content }]
+        }))
+      ]
 
   // 创建聊天会话
   const chat = ai.chats.create({
@@ -243,9 +256,25 @@ export async function sendMessageToGemini(
     }
   } catch (error: any) {
     // 处理 API 错误
+    // 检查是否为缓存相关错误（404 NOT_FOUND 或 INVALID_ARGUMENT）
+    const errorMessage = error.message || ''
+    const isCacheError = cachedContentName && (
+      error.status === 404 ||
+      errorMessage.includes('NOT_FOUND') ||
+      errorMessage.includes('cached') ||
+      errorMessage.includes('INVALID_ARGUMENT')
+    )
+
+    if (isCacheError) {
+      // 缓存失效错误，抛出特殊错误让调用方处理
+      const cacheError = new Error(`缓存失效: ${errorMessage}`)
+      ;(cacheError as any).isCacheError = true
+      throw cacheError
+    }
+
     if (error.status) {
       throw new Error(`API请求失败 (${error.status}): ${error.statusText || error.message || '未知错误'}`)
-    } else if (error.message?.includes('fetch')) {
+    } else if (errorMessage.includes('fetch')) {
       throw new Error('网络连接失败')
     }
     throw error

@@ -50,6 +50,7 @@ export interface IdeaWorkflowConfig {
     evaluator: string           // 评审提示词
     summarizer: string          // 筛选提示词
   }
+  userIdea: string              // 用户的研究方向或粗略 idea
 }
 
 // ========== 工作流会话 ==========

@@ -153,6 +153,13 @@ export function useIdeaConfig() {
     await saveConfig(newConfig)
   }, [config, saveConfig])
 
+  // 更新用户研究方向
+  const updateUserIdea = useCallback(async (userIdea: string) => {
+    if (!config) return
+    const newConfig = { ...config, userIdea }
+    await saveConfig(newConfig)
+  }, [config, saveConfig])
+
   // 切换模型启用状态
   const toggleModelEnabled = useCallback(async (
     type: 'generators' | 'evaluators',
@@ -238,7 +245,8 @@ export function useIdeaConfig() {
         generator: '',
         evaluator: '',
         summarizer: ''
-      }
+      },
+      userIdea: ''
     }
     await saveConfig(defaultConfig)
   }, [saveConfig])
@@ -257,6 +265,7 @@ export function useIdeaConfig() {
     updateEvaluators,
     updateSummarizer,
     updatePrompts,
+    updateUserIdea,
     toggleModelEnabled,
     addCustomModel,
     removeCustomModel,

@@ -10,6 +10,7 @@ import {
   type PaperGroup
 } from '../../services/storage/db'
 import { deletePaperFromLocal } from '../../services/storage/paperStorage'
+import { cleanupPaperCache } from '../../services/ai/cacheService'
 import GroupList from './GroupList'
 import { IdeaWorkflowRunner, IdeaSettingsModal } from '../idea'
 
@@ -62,7 +63,7 @@ export default function Sidebar({
     }
 
     const paper = papers.find(p => p.id === paperId)
-    
+
     // 删除本地文件
     if (paper?.localPath) {
       try {
@@ -71,6 +72,11 @@ export default function Sidebar({
         console.error('删除本地文件失败:', err)
       }
     }
+
+    // 清理远端缓存（后台执行，不阻塞）
+    cleanupPaperCache(paperId).catch(err => {
+      console.error('清理远端缓存失败:', err)
+    })
 
     await deletePaper(paperId)
     await loadData()

@@ -278,6 +278,9 @@ export async function deletePaper(paperId: number): Promise<void> {
   }
 
   await db.conversations.where('paperId').equals(paperId).delete()
+
+  // 删除缓存元数据（远端缓存由 cacheService.cleanupPaperCache 清理）
+  await db.settings.delete(`paper_cache_${paperId}`)
 }
 
 /**
@@ -511,27 +514,32 @@ function mergePresetModels(
 export async function getIdeaWorkflowConfig(): Promise<IdeaWorkflowConfig> {
   const setting = await db.settings.get('idea_workflow_config')
   if (setting?.value) {
-    const config: IdeaWorkflowConfig = JSON.parse(setting.value)
+    const config = JSON.parse(setting.value) as Partial<IdeaWorkflowConfig>
 
     // 检查并合并新的预设模型
-    const mergedGenerators = mergePresetModels(config.generators, PRESET_GENERATORS)
-    const mergedEvaluators = mergePresetModels(config.evaluators, PRESET_EVALUATORS)
+    const mergedGenerators = mergePresetModels(config.generators || [], PRESET_GENERATORS)
+    const mergedEvaluators = mergePresetModels(config.evaluators || [], PRESET_EVALUATORS)
 
-    // 如果有新模型被添加，自动保存更新后的配置
-    if (
-      mergedGenerators.length !== config.generators.length ||
-      mergedEvaluators.length !== config.evaluators.length
-    ) {
-      const updatedConfig = {
-        ...config,
-        generators: mergedGenerators,
-        evaluators: mergedEvaluators
-      }
-      await saveIdeaWorkflowConfig(updatedConfig)
-      return updatedConfig
+    // 补全可能缺失的新字段（向后兼容旧配置）
+    const normalizedConfig: IdeaWorkflowConfig = {
+      generators: mergedGenerators,
+      evaluators: mergedEvaluators,
+      summarizer: config.summarizer || PRESET_SUMMARIZER,
+      prompts: config.prompts || { generator: '', evaluator: '', summarizer: '' },
+      userIdea: config.userIdea ?? ''
     }
 
-    return config
+    // 如果配置有变更（新模型或新字段），自动保存
+    const needsUpdate =
+      mergedGenerators.length !== (config.generators?.length || 0) ||
+      mergedEvaluators.length !== (config.evaluators?.length || 0) ||
+      config.userIdea === undefined
+
+    if (needsUpdate) {
+      await saveIdeaWorkflowConfig(normalizedConfig)
+    }
+
+    return normalizedConfig
   }
 
   // 返回默认配置
@@ -543,7 +551,8 @@ export async function getIdeaWorkflowConfig(): Promise<IdeaWorkflowConfig> {
       generator: '',  // 空字符串表示使用默认提示词
       evaluator: '',
       summarizer: ''
-    }
+    },
+    userIdea: ''
   }
 }
 

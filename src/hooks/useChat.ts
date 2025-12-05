@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
-import { db, type Message, type Conversation, type MessageImage, deleteConversation as dbDeleteConversation, renameConversation as dbRenameConversation, exportConversation as dbExportConversation, getPaperMarkdown, deleteMessagesAfter } from '../services/storage/db'
+import { useState, useEffect, useRef } from 'react'
+import { db, type Message, type Conversation, type MessageImage, deleteConversation as dbDeleteConversation, renameConversation as dbRenameConversation, exportConversation as dbExportConversation, getPaperMarkdown, deleteMessagesAfter, getGeminiSettings } from '../services/storage/db'
 import { sendMessageToGemini } from '../services/ai/geminiClient'
 import { loadDomainKnowledge } from '../services/knowledge/domainKnowledgeService'
+import { getOrCreatePaperCache, refreshCacheTTL, invalidateCache } from '../services/ai/cacheService'
 
 // 引用解析正则
 const MENTION_PATTERN = /@\[([^\]]+)\]\(paperId:(\d+)\)/g
@@ -40,6 +41,10 @@ export function useChat(paperId: number) {
   const [streamingStartTime, setStreamingStartTime] = useState<Date | null>(null)
   const [editingMessageId, setEditingMessageId] = useState<number | null>(null)
 
+  // 缓存状态
+  const cacheNameRef = useRef<string | null>(null)
+  const cacheInitializedRef = useRef(false)
+
   // 刷新消息列表
   const refreshMessages = async (conversationId: number) => {
     const msgs = await db.messages
@@ -75,6 +80,12 @@ export function useChat(paperId: number) {
     }
     return convId
   }
+
+  // 论文切换时重置缓存状态
+  useEffect(() => {
+    cacheNameRef.current = null
+    cacheInitializedRef.current = false
+  }, [paperId])
 
   // 加载对话列表
   useEffect(() => {
@@ -325,16 +336,63 @@ export function useChat(paperId: number) {
         } as Message])
       }
 
-      // 调用AI（与保存用户消息并行）
-      const result = await sendMessageToGemini(
-        contextWithMentions,
-        content,
-        history,
-        images,
-        (text) => setStreamingText(text),
-        (thought) => setStreamingThought(thought),
-        () => {} // 已经提前设置了startTime
-      )
+      // 获取或创建缓存（仅在没有额外引用时使用缓存）
+      // 有引用论文或领域知识时，上下文会变化，不使用缓存
+      const hasExtraContext = mentionContents.length > 0 || domainKnowledge
+      let cacheName: string | null = null
+
+      if (!hasExtraContext) {
+        const settings = await getGeminiSettings()
+        // 每次都调用 getOrCreatePaperCache，它内部会检查缓存有效性（TTL/模型）
+        // 有效则复用，无效则自动重建
+        cacheName = await getOrCreatePaperCache(paperId, paper.markdown, settings.model)
+        cacheNameRef.current = cacheName
+        cacheInitializedRef.current = !!cacheName
+      } else {
+        // 有额外引用时，后台刷新缓存 TTL 以防长时间不用导致过期
+        if (cacheNameRef.current) {
+          refreshCacheTTL(paperId).catch(() => {})
+        }
+      }
+
+      // 调用AI（支持缓存错误自愈重试）
+      let result
+      try {
+        result = await sendMessageToGemini(
+          contextWithMentions,
+          content,
+          history,
+          images,
+          (text) => setStreamingText(text),
+          (thought) => setStreamingThought(thought),
+          () => {}, // 已经提前设置了startTime
+          cacheName
+        )
+      } catch (err: any) {
+        // 检查是否为缓存错误，如果是则失效缓存并用传统模式重试
+        if (err.isCacheError && cacheName) {
+          console.log('[Chat] 缓存失效，使用传统模式重试')
+          await invalidateCache(paperId)
+          cacheNameRef.current = null
+          cacheInitializedRef.current = false
+          // 重置流式状态
+          setStreamingText('')
+          setStreamingThought('')
+          // 不使用缓存重试
+          result = await sendMessageToGemini(
+            contextWithMentions,
+            content,
+            history,
+            images,
+            (text) => setStreamingText(text),
+            (thought) => setStreamingThought(thought),
+            () => {},
+            null
+          )
+        } else {
+          throw err
+        }
+      }
 
       // 确保用户消息已保存
       await saveUserMessagePromise
@@ -375,6 +433,14 @@ export function useChat(paperId: number) {
       await db.conversations.update(conversationId, {
         updatedAt: new Date()
       })
+
+      // 刷新对话列表（确保自动命名后标题更新到UI）
+      const updatedConvs = await db.conversations
+        .where('paperId')
+        .equals(paperId)
+        .reverse()
+        .sortBy('createdAt')
+      setConversations(updatedConvs)
 
       // 刷新消息列表
       const finalMessages = await db.messages

@@ -13,10 +13,10 @@ interface Props {
   onClose: () => void
 }
 
-type TabType = 'api' | 'generators' | 'evaluators' | 'summarizer' | 'prompts'
+type TabType = 'idea' | 'api' | 'generators' | 'evaluators' | 'summarizer' | 'prompts'
 
 export function IdeaSettingsModal({ isOpen, onClose }: Props) {
-  const [activeTab, setActiveTab] = useState<TabType>('api')
+  const [activeTab, setActiveTab] = useState<TabType>('idea')
   const {
     config,
     loading,
@@ -28,6 +28,7 @@ export function IdeaSettingsModal({ isOpen, onClose }: Props) {
     toggleModelEnabled,
     updateModelConfig,
     updatePrompts,
+    updateUserIdea,
     updateSummarizer,
     resetToDefaults
   } = useIdeaConfig()
@@ -36,6 +37,7 @@ export function IdeaSettingsModal({ isOpen, onClose }: Props) {
   const [localApiKeys, setLocalApiKeys] = useState({ gemini: '', openai: '', aliyun: '' })
   const [localEndpoints, setLocalEndpoints] = useState({ openai: '', aliyun: '', gemini: '' })
   const [localPrompts, setLocalPrompts] = useState({ generator: '', evaluator: '', summarizer: '' })
+  const [localUserIdea, setLocalUserIdea] = useState('')
 
   // 密钥显示/隐藏状态
   const [showKeys, setShowKeys] = useState({ openai: false, aliyun: false })
@@ -61,9 +63,10 @@ export function IdeaSettingsModal({ isOpen, onClose }: Props) {
           summarizer: config.prompts.summarizer
         })
       }
+      setLocalUserIdea(config?.userIdea || '')
       setInitialized(true)
     }
-  }, [loading, initialized, apiKeys, endpoints, config?.prompts])
+  }, [loading, initialized, apiKeys, endpoints, config?.prompts, config?.userIdea])
 
   // 弹窗关闭时重置状态，下次打开重新加载
   useEffect(() => {
@@ -96,7 +99,12 @@ export function IdeaSettingsModal({ isOpen, onClose }: Props) {
     await updatePrompts(localPrompts)
   }
 
+  const handleSaveUserIdea = async () => {
+    await updateUserIdea(localUserIdea)
+  }
+
   const tabs: { key: TabType; label: string }[] = [
+    { key: 'idea', label: '研究方向' },
     { key: 'api', label: 'API 密钥' },
     { key: 'generators', label: '生成器' },
     { key: 'evaluators', label: '评审器' },
@@ -139,6 +147,31 @@ export function IdeaSettingsModal({ isOpen, onClose }: Props) {
 
         {/* 内容区域 */}
         <div className="flex-1 overflow-y-auto p-6">
+          {/* 研究方向 */}
+          {activeTab === 'idea' && (
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-sm font-medium text-gray-700">研究方向</h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  描述你的研究兴趣、想探索的问题或粗略的 idea，生成器将围绕此方向构思
+                </p>
+              </div>
+              <textarea
+                value={localUserIdea}
+                onChange={e => setLocalUserIdea(e.target.value)}
+                className="w-full h-48 px-3 py-2 border rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                placeholder={"例如：\n- 如何提升视觉语言模型在长文档理解上的效果？\n- 探索 xxx 与 xxx 的结合可能性\n- 现有方法在 xxx 场景下存在 xxx 问题，希望找到解决方案"}
+              />
+              <button
+                onClick={handleSaveUserIdea}
+                disabled={saving}
+                className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50"
+              >
+                保存
+              </button>
+            </div>
+          )}
+
           {/* API 密钥 */}
           {activeTab === 'api' && (
             <div className="space-y-6">

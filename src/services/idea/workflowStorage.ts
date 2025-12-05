@@ -289,3 +289,50 @@ export function formatForSummarizer(
 
   return sections.join('\n\n')
 }
+
+/**
+ * 收集生成器的完整上下文
+ * 整合：领域知识 + 论文笔记 + 用户研究方向
+ */
+export async function collectGeneratorContext(
+  groupId: number,
+  groupName: string,
+  userIdea: string
+): Promise<string> {
+  const sections: string[] = []
+
+  // 1. 领域知识（背景知识）
+  const domainKnowledge = await loadDomainKnowledge(groupName)
+  if (domainKnowledge) {
+    sections.push(`# 领域知识\n\n${domainKnowledge}`)
+  }
+
+  // 2. 论文笔记（具体材料）
+  const notes = await collectGroupNotes(groupId)
+  sections.push(`# 论文笔记\n\n${notes}`)
+
+  // 3. 用户输入（放在最后，作为任务指令）
+  if (userIdea.trim()) {
+    sections.push(`# 研究方向与目标\n\n${userIdea}`)
+  }
+
+  return sections.join('\n\n---\n\n')
+}
+
+/**
+ * 加载领域知识
+ */
+async function loadDomainKnowledge(groupName: string): Promise<string | null> {
+  const rootHandle = await getDirectoryHandle()
+  if (!rootHandle) return null
+
+  try {
+    const hasPermission = await checkDirectoryPermission(rootHandle)
+    if (!hasPermission) return null
+
+    const groupDir = await rootHandle.getDirectoryHandle(groupName)
+    return await readTextFile(groupDir, 'domain_knowledge.md')
+  } catch {
+    return null
+  }
+}
