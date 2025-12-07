@@ -18,6 +18,7 @@ function ResizablePanel({
   const [leftWidth, setLeftWidth] = useState(defaultLeftWidth)
   const [collapsed, setCollapsed] = useState(false)
   const [widthBeforeCollapse, setWidthBeforeCollapse] = useState(defaultLeftWidth)
+  const [isDragging, setIsDragging] = useState(false)
   const isDraggingRef = useRef(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -36,6 +37,7 @@ function ResizablePanel({
     const handleMouseUp = () => {
       if (isDraggingRef.current) {
         isDraggingRef.current = false
+        setIsDragging(false)
         document.body.style.cursor = ''
         document.body.style.userSelect = ''
       }
@@ -53,6 +55,7 @@ function ResizablePanel({
   const handleMouseDown = () => {
     if (collapsed) return
     isDraggingRef.current = true
+    setIsDragging(true)
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
   }
@@ -69,9 +72,9 @@ function ResizablePanel({
   return (
     <div ref={containerRef} className="flex h-full w-full">
       {/* 左侧面板 */}
-      <div 
-        style={{ width: collapsed ? '100%' : `${leftWidth}%` }} 
-        className="flex flex-col overflow-hidden transition-[width] duration-300"
+      <div
+        style={{ width: collapsed ? '100%' : `${leftWidth}%` }}
+        className={`flex flex-col overflow-hidden ${!isDragging ? 'transition-[width] duration-300' : ''}`}
       >
         {leftPanel}
       </div>
@@ -114,11 +117,9 @@ function ResizablePanel({
       </div>
 
       {/* 右侧面板 */}
-      <div 
-        style={{ width: collapsed ? '0%' : `${100 - leftWidth}%` }} 
-        className={`flex flex-col transition-[width] duration-300 ${
-          collapsed ? 'overflow-hidden' : 'overflow-hidden'
-        }`}
+      <div
+        style={{ width: collapsed ? '0%' : `${100 - leftWidth}%` }}
+        className={`flex flex-col overflow-hidden ${!isDragging ? 'transition-[width] duration-300' : ''}`}
       >
         {rightPanel}
       </div>
