@@ -496,15 +496,31 @@ function mergePresetModels(
   userModels: ModelConfig[],
   presetModels: ModelConfig[]
 ): ModelConfig[] {
+  const presetMap = new Map(presetModels.map(p => [p.id, p]))
   const userIds = new Set(userModels.map(m => m.id))
-  const newPresets = presetModels.filter(p => !userIds.has(p.id))
 
+  // 更新已存在的预设模型（同步 model、slug 等字段，保留用户配置）
+  const updatedModels = userModels.map(m => {
+    const preset = presetMap.get(m.id)
+    if (preset && m.isPreset) {
+      return {
+        ...m,
+        model: preset.model,
+        slug: preset.slug,
+        provider: preset.provider
+      }
+    }
+    return m
+  })
+
+  // 添加新的预设模型
+  const newPresets = presetModels.filter(p => !userIds.has(p.id))
   if (newPresets.length === 0) {
-    return userModels
+    return updatedModels
   }
 
   // 新预设默认禁用，追加到列表末尾
-  return [...userModels, ...newPresets.map(p => ({ ...p, enabled: false }))]
+  return [...updatedModels, ...newPresets.map(p => ({ ...p, enabled: false }))]
 }
 
 /**
@@ -529,10 +545,21 @@ export async function getIdeaWorkflowConfig(): Promise<IdeaWorkflowConfig> {
       userIdea: config.userIdea ?? ''
     }
 
-    // 如果配置有变更（新模型或新字段），自动保存
+    // 检查预设模型是否有字段更新
+    const hasPresetUpdates = (userModels: ModelConfig[], presetModels: ModelConfig[]) => {
+      const presetMap = new Map(presetModels.map(p => [p.id, p]))
+      return userModels.some(m => {
+        const preset = presetMap.get(m.id)
+        return preset && m.isPreset && (m.model !== preset.model || m.slug !== preset.slug)
+      })
+    }
+
+    // 如果配置有变更（新模型、字段更新或新字段），自动保存
     const needsUpdate =
       mergedGenerators.length !== (config.generators?.length || 0) ||
       mergedEvaluators.length !== (config.evaluators?.length || 0) ||
+      hasPresetUpdates(config.generators || [], PRESET_GENERATORS) ||
+      hasPresetUpdates(config.evaluators || [], PRESET_EVALUATORS) ||
       config.userIdea === undefined
 
     if (needsUpdate) {

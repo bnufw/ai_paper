@@ -440,6 +440,7 @@ function ModelCard({
     thinkingLevel: model.thinkingConfig?.thinkingLevel,
     budgetTokens: model.thinkingConfig?.budgetTokens,
     reasoningEffort: model.thinkingConfig?.reasoningEffort,
+    verbosity: model.thinkingConfig?.verbosity,
     enableThinking: model.thinkingConfig?.enableThinking,
     thinkingType: model.thinkingConfig?.thinkingType
   })
@@ -453,6 +454,7 @@ function ModelCard({
       thinkingLevel: model.thinkingConfig?.thinkingLevel,
       budgetTokens: model.thinkingConfig?.budgetTokens,
       reasoningEffort: model.thinkingConfig?.reasoningEffort,
+      verbosity: model.thinkingConfig?.verbosity,
       enableThinking: model.thinkingConfig?.enableThinking,
       thinkingType: model.thinkingConfig?.thinkingType
     })
@@ -524,7 +526,11 @@ function ModelCard({
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Max Tokens</label>
+              <label className="block text-xs text-gray-500 mb-1">
+                {model.provider === 'openai' && (model.model.includes('gpt-5') || model.model.includes('o3') || model.model.includes('o4'))
+                  ? 'Max Completion Tokens'
+                  : 'Max Tokens'}
+              </label>
               <input
                 type="number"
                 step="1000"
@@ -639,7 +645,57 @@ function ModelCard({
             </div>
           )}
 
-          {model.provider === 'openai' && (model.model.includes('gpt-5') || model.model.includes('o3') || model.model.includes('o4')) && (
+          {model.provider === 'openai' && model.model.includes('gpt-5') && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Reasoning Effort</label>
+                <select
+                  value={localConfig.reasoningEffort || 'low'}
+                  onChange={e => {
+                    const val = e.target.value as any
+                    setLocalConfig(prev => ({ ...prev, reasoningEffort: val }))
+                    onUpdate({
+                      thinkingConfig: {
+                        ...model.thinkingConfig,
+                        reasoningEffort: val
+                      }
+                    })
+                  }}
+                  className="w-full px-2 py-1 border rounded text-sm text-gray-900"
+                >
+                  <option value="minimal">Minimal</option>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Verbosity</label>
+                <select
+                  value={localConfig.verbosity ?? ''}
+                  onChange={e => {
+                    const val = e.target.value as 'low' | 'medium' | 'high' | ''
+                    const verbosity = val === '' ? undefined : val
+                    setLocalConfig(prev => ({ ...prev, verbosity }))
+                    onUpdate({
+                      thinkingConfig: {
+                        ...model.thinkingConfig,
+                        verbosity
+                      }
+                    })
+                  }}
+                  className="w-full px-2 py-1 border rounded text-sm text-gray-900"
+                >
+                  <option value="">Auto</option>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </div>
+            </div>
+          )}
+
+          {model.provider === 'openai' && (model.model.includes('o3') || model.model.includes('o4')) && (
             <div>
               <label className="block text-xs text-gray-500 mb-1">Reasoning Effort</label>
               <select
@@ -656,7 +712,6 @@ function ModelCard({
                 }}
                 className="w-full px-2 py-1 border rounded text-sm text-gray-900"
               >
-                <option value="minimal">Minimal (仅 GPT-5)</option>
                 <option value="low">Low</option>
                 <option value="medium">Medium</option>
                 <option value="high">High</option>
