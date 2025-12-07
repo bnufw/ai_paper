@@ -28,8 +28,9 @@ export default forwardRef<PaperMentionPopupRef, PaperMentionPopupProps>(function
     async function loadPapers() {
       const allPapers = await db.papers.orderBy('createdAt').reverse().toArray()
       
-      let filtered = allPapers.filter(p => p.id !== currentPaperId)
-      
+      // 只显示有本地 paper.md 的论文（localPath 存在）
+      let filtered = allPapers.filter(p => p.id !== currentPaperId && p.localPath)
+
       if (searchText) {
         const query = searchText.toLowerCase()
         filtered = filtered.filter(p => p.title.toLowerCase().includes(query))
@@ -90,7 +91,7 @@ export default forwardRef<PaperMentionPopupRef, PaperMentionPopupProps>(function
           transform: 'translateY(-100%) translateY(-8px)'
         }}
       >
-        <div className="text-sm text-gray-500">没有找到其他论文</div>
+        <div className="text-sm text-gray-500">没有可引用的论文（需有本地 markdown）</div>
       </div>
     )
   }

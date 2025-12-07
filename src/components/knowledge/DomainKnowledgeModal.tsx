@@ -8,17 +8,19 @@ import {
   parseDocx,
   organizeKnowledge,
   saveDomainKnowledge,
-  loadDomainKnowledge
+  loadDomainKnowledge,
+  generateFromNotes
 } from '../../services/knowledge/domainKnowledgeService'
 import NoteEditor from '../note/NoteEditor'
 
 interface Props {
   isOpen: boolean
   onClose: () => void
+  groupId: number
   groupName: string
 }
 
-export default function DomainKnowledgeModal({ isOpen, onClose, groupName }: Props) {
+export default function DomainKnowledgeModal({ isOpen, onClose, groupId, groupName }: Props) {
   const [content, setContent] = useState('')
   const [initialContent, setInitialContent] = useState('')
   const [loading, setLoading] = useState(true)
@@ -169,6 +171,21 @@ export default function DomainKnowledgeModal({ isOpen, onClose, groupName }: Pro
     }
   }
 
+  const handleGenerateFromNotes = async () => {
+    if (organizing) return
+
+    setOrganizing(true)
+    setError('')
+    try {
+      const generated = await generateFromNotes(groupId, content, setContent)
+      setContent(generated)
+    } catch (err) {
+      setError(`从笔记生成失败：${(err as Error).message || '请检查网络或 API Key'}`)
+    } finally {
+      setOrganizing(false)
+    }
+  }
+
   if (!isOpen) return null
 
   return (
@@ -214,6 +231,14 @@ export default function DomainKnowledgeModal({ isOpen, onClose, groupName }: Pro
               className="px-3 py-1.5 text-sm bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50"
             >
               AI 整理
+            </button>
+            <button
+              onClick={handleGenerateFromNotes}
+              disabled={organizing}
+              className="px-3 py-1.5 text-sm bg-purple-500 text-white rounded hover:bg-purple-600 disabled:opacity-50"
+              title="从分组内论文笔记提取并整合到领域知识"
+            >
+              加入笔记
             </button>
             {/* 模式切换 */}
             <div className="flex bg-gray-100 rounded-md p-0.5 ml-2">

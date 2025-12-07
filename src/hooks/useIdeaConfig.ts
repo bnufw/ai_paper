@@ -34,11 +34,9 @@ export function useIdeaConfig() {
   const [endpoints, setEndpoints] = useState<{
     openai: string
     aliyun: string
-    gemini: string
   }>({
     openai: DEFAULT_ENDPOINTS.openai,
-    aliyun: DEFAULT_ENDPOINTS.aliyun,
-    gemini: DEFAULT_ENDPOINTS.gemini || ''
+    aliyun: DEFAULT_ENDPOINTS.aliyun
   })
 
   // 加载配置
@@ -51,16 +49,14 @@ export function useIdeaConfig() {
         openaiKey,
         aliyunKey,
         openaiEndpoint,
-        aliyunEndpoint,
-        geminiEndpoint
+        aliyunEndpoint
       ] = await Promise.all([
         getIdeaWorkflowConfig(),
         getAPIKey('gemini'),
         getIdeaApiKey('openai'),
         getIdeaApiKey('aliyun'),
         getIdeaApiEndpoint('openai'),
-        getIdeaApiEndpoint('aliyun'),
-        getIdeaApiEndpoint('gemini')
+        getIdeaApiEndpoint('aliyun')
       ])
 
       setConfig(workflowConfig)
@@ -71,8 +67,7 @@ export function useIdeaConfig() {
       })
       setEndpoints({
         openai: openaiEndpoint,
-        aliyun: aliyunEndpoint,
-        gemini: geminiEndpoint
+        aliyun: aliyunEndpoint
       })
     } catch (e) {
       console.error('加载配置失败:', e)
@@ -116,8 +111,7 @@ export function useIdeaConfig() {
     try {
       await Promise.all([
         saveIdeaApiEndpoint('openai', eps.openai),
-        saveIdeaApiEndpoint('aliyun', eps.aliyun),
-        saveIdeaApiEndpoint('gemini', eps.gemini)
+        saveIdeaApiEndpoint('aliyun', eps.aliyun)
       ])
       setEndpoints(eps)
     } finally {

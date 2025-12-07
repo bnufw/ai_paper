@@ -11,7 +11,7 @@ export interface CacheMetadata {
 }
 
 // 缓存 TTL（1小时，单位秒）
-const CACHE_TTL_SECONDS = 3600
+const CACHE_TTL_SECONDS = 600
 
 /**
  * 获取论文的缓存元数据

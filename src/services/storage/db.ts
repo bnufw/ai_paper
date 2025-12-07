@@ -592,11 +592,10 @@ export async function saveIdeaApiKey(provider: 'openai' | 'aliyun', value: strin
 /**
  * 获取 Idea 工作流 API 端点
  */
-export async function getIdeaApiEndpoint(provider: 'openai' | 'aliyun' | 'gemini'): Promise<string> {
+export async function getIdeaApiEndpoint(provider: 'openai' | 'aliyun'): Promise<string> {
   const keyMap = {
     openai: 'idea_openai_base_url',
-    aliyun: 'idea_aliyun_base_url',
-    gemini: 'idea_gemini_base_url'
+    aliyun: 'idea_aliyun_base_url'
   }
   const setting = await db.settings.get(keyMap[provider])
   return setting?.value || DEFAULT_ENDPOINTS[provider] || ''
@@ -605,11 +604,10 @@ export async function getIdeaApiEndpoint(provider: 'openai' | 'aliyun' | 'gemini
 /**
  * 保存 Idea 工作流 API 端点
  */
-export async function saveIdeaApiEndpoint(provider: 'openai' | 'aliyun' | 'gemini', value: string): Promise<void> {
+export async function saveIdeaApiEndpoint(provider: 'openai' | 'aliyun', value: string): Promise<void> {
   const keyMap = {
     openai: 'idea_openai_base_url',
-    aliyun: 'idea_aliyun_base_url',
-    gemini: 'idea_gemini_base_url'
+    aliyun: 'idea_aliyun_base_url'
   }
   await db.settings.put({ key: keyMap[provider], value })
 }

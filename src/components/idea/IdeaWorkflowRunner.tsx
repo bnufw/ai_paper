@@ -3,7 +3,7 @@
  * 实时显示工作流执行状态
  */
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useIdeaWorkflow } from '../../hooks/useIdeaWorkflow'
 import type { ModelTaskState, WorkflowPhase } from '../../types/idea'
 
@@ -16,6 +16,7 @@ interface Props {
 
 export function IdeaWorkflowRunner({ isOpen, groupId, groupName, onClose }: Props) {
   const { state, isRunning, start, cancel, reset, getStageStats } = useIdeaWorkflow()
+  const [, setTick] = useState(0)  // 用于强制刷新计时
 
   // 打开时自动开始
   useEffect(() => {
@@ -23,6 +24,13 @@ export function IdeaWorkflowRunner({ isOpen, groupId, groupName, onClose }: Prop
       start(groupId)
     }
   }, [isOpen, groupId, state.phase, start])
+
+  // 计时器：运行中时每秒刷新
+  useEffect(() => {
+    if (!isRunning) return
+    const timer = setInterval(() => setTick(t => t + 1), 1000)
+    return () => clearInterval(timer)
+  }, [isRunning])
 
   // 关闭时重置
   const handleClose = () => {

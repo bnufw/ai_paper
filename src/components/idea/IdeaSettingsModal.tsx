@@ -35,7 +35,7 @@ export function IdeaSettingsModal({ isOpen, onClose }: Props) {
 
   // 本地编辑状态 - 初始化为空，等待数据加载后同步
   const [localApiKeys, setLocalApiKeys] = useState({ gemini: '', openai: '', aliyun: '' })
-  const [localEndpoints, setLocalEndpoints] = useState({ openai: '', aliyun: '', gemini: '' })
+  const [localEndpoints, setLocalEndpoints] = useState({ openai: '', aliyun: '' })
   const [localPrompts, setLocalPrompts] = useState({ generator: '', evaluator: '', summarizer: '' })
   const [localUserIdea, setLocalUserIdea] = useState('')
 
@@ -53,8 +53,7 @@ export function IdeaSettingsModal({ isOpen, onClose }: Props) {
       })
       setLocalEndpoints({
         openai: endpoints.openai,
-        aliyun: endpoints.aliyun,
-        gemini: endpoints.gemini
+        aliyun: endpoints.aliyun
       })
       if (config?.prompts) {
         setLocalPrompts({
@@ -254,18 +253,6 @@ export function IdeaSettingsModal({ isOpen, onClose }: Props) {
                       value={localEndpoints.aliyun}
                       onChange={e => setLocalEndpoints({ ...localEndpoints, aliyun: e.target.value })}
                       className="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm text-gray-600 mb-1">
-                      Gemini 代理 <span className="text-gray-400">(可选)</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={localEndpoints.gemini}
-                      onChange={e => setLocalEndpoints({ ...localEndpoints, gemini: e.target.value })}
-                      className="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                      placeholder="留空使用官方端点"
                     />
                   </div>
                 </div>

@@ -6,6 +6,7 @@ import {
   loadDomainKnowledge as loadFromDisk,
   hasDomainKnowledge as checkExists
 } from '../storage/fileSystem'
+import { collectGroupNotes } from '../idea/workflowStorage'
 
 async function loadPrompt(filename: string): Promise<string> {
   const response = await fetch(`/prompts/${filename}`)
@@ -105,4 +106,67 @@ export async function loadDomainKnowledge(groupName: string): Promise<string | n
  */
 export async function hasDomainKnowledge(groupName: string): Promise<boolean> {
   return await checkExists(groupName)
+}
+
+/**
+ * 从分组论文笔记生成/更新领域知识
+ * 使用 Gemini 2.5 + 动态思考 + 温度 0.1
+ */
+export async function generateFromNotes(
+  groupId: number,
+  existingContent: string,
+  onStream?: (text: string) => void
+): Promise<string> {
+  const apiKey = await getAPIKey('gemini')
+  if (!apiKey) {
+    throw new Error('未配置 Gemini API Key')
+  }
+
+  const notes = await collectGroupNotes(groupId)
+  const settings = await getGeminiSettings()
+  const ai = new GoogleGenAI({ apiKey })
+  const systemPrompt = await loadPrompt('organize_domain_knowledge.md')
+
+  const userContent = existingContent
+    ? `## 现有领域知识\n${existingContent}\n\n## 新增内容（来自论文笔记）\n${notes}`
+    : `## 新增内容（来自论文笔记）\n${notes}`
+
+  let fullText = ''
+
+  if (settings.streaming && onStream) {
+    const response = await ai.models.generateContentStream({
+      model: 'gemini-2.5-pro',
+      contents: userContent,
+      config: {
+        systemInstruction: systemPrompt,
+        temperature: 0.1,
+        thinkingConfig: {
+          thinkingBudget: -1,
+          includeThoughts: false
+        }
+      }
+    })
+
+    for await (const chunk of response) {
+      const chunkText = chunk.text || ''
+      fullText += chunkText
+      onStream(fullText)
+    }
+  } else {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-pro',
+      contents: userContent,
+      config: {
+        systemInstruction: systemPrompt,
+        temperature: 0.1,
+        thinkingConfig: {
+          thinkingBudget: -1,
+          includeThoughts: false
+        }
+      }
+    })
+    fullText = response.text || ''
+  }
+
+  return fullText
 }

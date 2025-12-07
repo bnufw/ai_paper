@@ -132,13 +132,11 @@ export interface LLMResponse {
 export interface ApiEndpoints {
   openai: string                // OpenAI 兼容端点 (Claude/GPT/o4)
   aliyun: string                // 阿里云 Qwen
-  gemini?: string               // Gemini 代理（可选）
 }
 
 export const DEFAULT_ENDPOINTS: ApiEndpoints = {
   openai: 'https://api.oaipro.com/v1',
-  aliyun: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-  gemini: 'https://api-proxy.de/gemini'
+  aliyun: 'https://dashscope.aliyuncs.com/compatible-mode/v1'
 }
 
 // ========== 预设模型 ==========
