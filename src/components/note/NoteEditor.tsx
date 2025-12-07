@@ -55,7 +55,7 @@ export default function NoteEditor({ content, onChange, onSave, mode }: NoteEdit
           />
         ) : (
           <div className="h-full overflow-auto">
-            <div className="max-w-4xl mx-auto p-8 prose prose-lg">
+            <div className="max-w-4xl mx-auto p-8 prose prose-lg max-w-none">
               <ReactMarkdown
                 remarkPlugins={[remarkMath, remarkGfm]}
                 rehypePlugins={[rehypeKatex, rehypeHighlight]}

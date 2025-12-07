@@ -16,7 +16,7 @@ export default function IdeaSessionList({
   collapsed
 }: IdeaSessionListProps) {
   const [sessions, setSessions] = useState<IdeaSession[]>([])
-  const [expanded, setExpanded] = useState(true)
+  const [expanded, setExpanded] = useState(false)
   const [loading, setLoading] = useState(true)
 
   // 加载会话列表
