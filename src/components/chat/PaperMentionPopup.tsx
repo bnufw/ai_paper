@@ -23,6 +23,8 @@ export default forwardRef<PaperMentionPopupRef, PaperMentionPopupProps>(function
   const [papers, setPapers] = useState<Paper[]>([])
   const [selectedIndex, setSelectedIndex] = useState(0)
   const popupRef = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
 
   useEffect(() => {
     async function loadPapers() {
@@ -36,7 +38,7 @@ export default forwardRef<PaperMentionPopupRef, PaperMentionPopupProps>(function
         filtered = filtered.filter(p => p.title.toLowerCase().includes(query))
       }
       
-      setPapers(filtered.slice(0, 5))
+      setPapers(filtered)
       setSelectedIndex(0)
     }
 
@@ -53,6 +55,14 @@ export default forwardRef<PaperMentionPopupRef, PaperMentionPopupProps>(function
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [onClose])
+
+  // 选中项变化时自动滚动到可见区域
+  useEffect(() => {
+    const selectedItem = itemRefs.current[selectedIndex]
+    if (selectedItem) {
+      selectedItem.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    }
+  }, [selectedIndex])
 
   // 暴露键盘处理方法给父组件
   useImperativeHandle(ref, () => ({
@@ -109,10 +119,11 @@ export default forwardRef<PaperMentionPopupRef, PaperMentionPopupProps>(function
       <div className="p-2 border-b border-gray-200 text-xs text-gray-500">
         选择要引用的论文 (↑↓选择, Enter确认, Esc取消)
       </div>
-      <div className="max-h-60 overflow-y-auto">
+      <div ref={listRef} className="max-h-60 overflow-y-auto">
         {papers.map((paper, index) => (
           <button
             key={paper.id}
+            ref={el => { itemRefs.current[index] = el }}
             onClick={() => onSelect(paper)}
             className={`w-full text-left px-3 py-2 hover:bg-blue-50 transition-colors ${
               index === selectedIndex ? 'bg-blue-100' : ''
