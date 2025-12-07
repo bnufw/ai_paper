@@ -4,3 +4,5 @@
 
 export { IdeaSettingsModal } from './IdeaSettingsModal'
 export { IdeaWorkflowRunner } from './IdeaWorkflowRunner'
+export { default as IdeaViewer } from './IdeaViewer'
+export { default as IdeaChatPanel } from './IdeaChatPanel'

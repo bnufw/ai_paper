@@ -8,6 +8,9 @@ import {
 } from '../../types/idea'
 import { getDirectoryHandle, getDirectory, readTextFile } from './fileSystem'
 
+// 重新导出 IdeaSession 类型
+export type { IdeaSession } from '../../types/idea'
+
 // 论文分组类型
 export interface PaperGroup {
   id?: number

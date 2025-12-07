@@ -7,14 +7,17 @@ import PDFUploader from './components/pdf/PDFUploader'
 import ChatPanel from './components/chat/ChatPanel'
 import NotePanel from './components/note/NotePanel'
 import PDFViewer from './components/pdf/PDFViewer'
+import { IdeaViewer, IdeaChatPanel } from './components/idea'
+import { useIdeaChat } from './hooks/useIdeaChat'
 import { getDirectoryHandle, checkDirectoryPermission } from './services/storage/fileSystem'
-import { db } from './services/storage/db'
+import { db, type IdeaSession } from './services/storage/db'
 import { organizeNote, loadNote, generateNote, saveNote } from './services/note/noteService'
 
 function App() {
   const [showSettings, setShowSettings] = useState(false)
   const [showStorageSetup, setShowStorageSetup] = useState(false)
   const [currentPaperId, setCurrentPaperId] = useState<number | null>(null)
+  const [currentIdeaSession, setCurrentIdeaSession] = useState<IdeaSession | null>(null)
   const [showUploader, setShowUploader] = useState(true)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [activeTab, setActiveTab] = useState<'paper' | 'note'>('paper')
@@ -23,6 +26,9 @@ function App() {
   const [noteVersion, setNoteVersion] = useState(0)
   const [isOrganizing, setIsOrganizing] = useState(false)
   const [isGeneratingNote, setIsGeneratingNote] = useState(false)
+
+  // Idea 对话 Hook
+  const ideaChat = useIdeaChat(currentIdeaSession)
 
   const handleNoteUpdated = () => {
     setNoteVersion(v => v + 1)
@@ -88,15 +94,23 @@ function App() {
 
   const handlePaperSelect = async (paperId: number) => {
     setCurrentPaperId(paperId)
+    setCurrentIdeaSession(null) // 切换到论文时清空 Idea 会话
     setShowUploader(false)
     setActiveTab('paper')
-    
+
     const paper = await db.papers.get(paperId)
     setCurrentPaperLocalPath(paper?.localPath)
   }
 
+  const handleSelectIdeaSession = (session: IdeaSession) => {
+    setCurrentIdeaSession(session)
+    setCurrentPaperId(null) // 切换到 Idea 时清空论文选择
+    setShowUploader(false)
+  }
+
   const handleNewPaper = () => {
     setCurrentPaperId(null)
+    setCurrentIdeaSession(null)
     setShowUploader(true)
   }
 
@@ -110,7 +124,9 @@ function App() {
       {/* Sidebar */}
       <Sidebar
         currentPaperId={currentPaperId}
+        currentIdeaSessionId={currentIdeaSession?.id ?? null}
         onSelectPaper={handlePaperSelect}
+        onSelectIdeaSession={handleSelectIdeaSession}
         onNewPaper={handleNewPaper}
         onOpenSettings={() => setShowSettings(true)}
         collapsed={sidebarCollapsed}
@@ -127,6 +143,35 @@ function App() {
             <div className="flex-1 overflow-auto p-8">
               <PDFUploader onUploadComplete={handleUploadComplete} />
             </div>
+          ) : currentIdeaSession ? (
+            /* Idea Chat View: Idea 查看器 + 对话面板 */
+            <ResizablePanel
+              leftPanel={
+                <IdeaViewer
+                  currentIdeaSlug={ideaChat.currentIdeaSlug}
+                  bestIdea={ideaChat.bestIdea}
+                  allIdeas={ideaChat.allIdeas}
+                  onIdeaChange={ideaChat.setCurrentIdeaSlug}
+                />
+              }
+              rightPanel={
+                <IdeaChatPanel
+                  session={currentIdeaSession}
+                  messages={ideaChat.messages}
+                  loading={ideaChat.loading}
+                  error={ideaChat.error}
+                  streamingText={ideaChat.streamingText}
+                  streamingThought={ideaChat.streamingThought}
+                  streamingStartTime={ideaChat.streamingStartTime}
+                  onSendMessage={ideaChat.sendMessage}
+                  onClearMessages={ideaChat.clearMessages}
+                  onBack={handleNewPaper}
+                />
+              }
+              defaultLeftWidth={50}
+              minLeftWidth={30}
+              minRightWidth={30}
+            />
           ) : currentPaperId ? (
             /* Paper View: 论文/笔记标签页 + 聊天面板 */
             <ResizablePanel

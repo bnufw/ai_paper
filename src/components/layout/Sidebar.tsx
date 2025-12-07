@@ -7,29 +7,35 @@ import {
   renameGroup,
   deleteGroup,
   type Paper,
-  type PaperGroup
+  type PaperGroup,
+  type IdeaSession
 } from '../../services/storage/db'
 import { deletePaperFromLocal } from '../../services/storage/paperStorage'
 import { cleanupPaperCache } from '../../services/ai/cacheService'
 import GroupList from './GroupList'
+import IdeaSessionList from './IdeaSessionList'
 import { IdeaWorkflowRunner, IdeaSettingsModal } from '../idea'
 
 interface SidebarProps {
   currentPaperId: number | null
+  currentIdeaSessionId: number | null
   onSelectPaper: (paperId: number) => void
+  onSelectIdeaSession: (session: IdeaSession) => void
   onNewPaper: () => void
   onOpenSettings: () => void
   collapsed: boolean
   onToggleCollapse: () => void
 }
 
-export default function Sidebar({ 
-  currentPaperId, 
-  onSelectPaper, 
+export default function Sidebar({
+  currentPaperId,
+  currentIdeaSessionId,
+  onSelectPaper,
+  onSelectIdeaSession,
   onNewPaper,
   onOpenSettings,
   collapsed,
-  onToggleCollapse 
+  onToggleCollapse
 }: SidebarProps) {
   const [papers, setPapers] = useState<Paper[]>([])
   const [groups, setGroups] = useState<PaperGroup[]>([])
@@ -188,6 +194,15 @@ export default function Sidebar({
             onGenerateIdea={handleGenerateIdea}
           />
         )
+      )}
+
+      {/* Idea 会话历史列表 */}
+      {!collapsed && (
+        <IdeaSessionList
+          currentSessionId={currentIdeaSessionId}
+          onSelectSession={onSelectIdeaSession}
+          collapsed={collapsed}
+        />
       )}
 
       {/* 底部：设置和统计信息 */}
