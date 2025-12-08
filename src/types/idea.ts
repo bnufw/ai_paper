@@ -292,6 +292,20 @@ export const PRESET_EVALUATORS: ModelConfig[] = [
     }
   },
   {
+    id: 'preset-claude-sonnet-eval',
+    slug: 'Claude 4.5 Sonnet',
+    provider: 'openai',
+    model: 'claude-sonnet-4-5-20250929',
+    enabled: false,
+    isPreset: true,
+    temperature: 0.5,
+    maxTokens: 12000,
+    thinkingConfig: {
+      thinkingType: 'enabled',
+      budgetTokens: 5000
+    }
+  },
+  {
     id: 'preset-claude-opus-eval',
     slug: 'Claude 4.5 Opus',
     provider: 'openai',

@@ -57,9 +57,15 @@ export function IdeaSettingsModal({ isOpen, onClose }: Props) {
       })
       if (config?.prompts) {
         setLocalPrompts({
-          generator: config.prompts.generator,
-          evaluator: config.prompts.evaluator,
-          summarizer: config.prompts.summarizer
+          generator: config.prompts.generator || DEFAULT_GENERATOR_PROMPT,
+          evaluator: config.prompts.evaluator || DEFAULT_EVALUATOR_PROMPT,
+          summarizer: config.prompts.summarizer || DEFAULT_SUMMARIZER_PROMPT
+        })
+      } else {
+        setLocalPrompts({
+          generator: DEFAULT_GENERATOR_PROMPT,
+          evaluator: DEFAULT_EVALUATOR_PROMPT,
+          summarizer: DEFAULT_SUMMARIZER_PROMPT
         })
       }
       setLocalUserIdea(config?.userIdea || '')
@@ -318,39 +324,57 @@ export function IdeaSettingsModal({ isOpen, onClose }: Props) {
           {activeTab === 'prompts' && (
             <div className="space-y-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  生成器提示词
-                  <span className="text-gray-400 font-normal ml-2">留空使用默认</span>
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    生成器提示词
+                  </label>
+                  <button
+                    onClick={() => setLocalPrompts({ ...localPrompts, generator: DEFAULT_GENERATOR_PROMPT })}
+                    className="text-xs text-blue-500 hover:text-blue-600"
+                  >
+                    重置为默认
+                  </button>
+                </div>
                 <textarea
                   value={localPrompts.generator}
                   onChange={e => setLocalPrompts({ ...localPrompts, generator: e.target.value })}
                   className="w-full h-40 px-3 py-2 border rounded-md font-mono text-sm focus:ring-2 focus:ring-blue-500 text-gray-900"
-                  placeholder={DEFAULT_GENERATOR_PROMPT.substring(0, 200) + '...'}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  评审器提示词
-                  <span className="text-gray-400 font-normal ml-2">留空使用默认</span>
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    评审器提示词
+                  </label>
+                  <button
+                    onClick={() => setLocalPrompts({ ...localPrompts, evaluator: DEFAULT_EVALUATOR_PROMPT })}
+                    className="text-xs text-blue-500 hover:text-blue-600"
+                  >
+                    重置为默认
+                  </button>
+                </div>
                 <textarea
                   value={localPrompts.evaluator}
                   onChange={e => setLocalPrompts({ ...localPrompts, evaluator: e.target.value })}
                   className="w-full h-40 px-3 py-2 border rounded-md font-mono text-sm focus:ring-2 focus:ring-blue-500 text-gray-900"
-                  placeholder={DEFAULT_EVALUATOR_PROMPT.substring(0, 200) + '...'}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  筛选器提示词
-                  <span className="text-gray-400 font-normal ml-2">留空使用默认</span>
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    筛选器提示词
+                  </label>
+                  <button
+                    onClick={() => setLocalPrompts({ ...localPrompts, summarizer: DEFAULT_SUMMARIZER_PROMPT })}
+                    className="text-xs text-blue-500 hover:text-blue-600"
+                  >
+                    重置为默认
+                  </button>
+                </div>
                 <textarea
                   value={localPrompts.summarizer}
                   onChange={e => setLocalPrompts({ ...localPrompts, summarizer: e.target.value })}
                   className="w-full h-40 px-3 py-2 border rounded-md font-mono text-sm focus:ring-2 focus:ring-blue-500 text-gray-900"
-                  placeholder={DEFAULT_SUMMARIZER_PROMPT.substring(0, 200) + '...'}
                 />
               </div>
               <button
@@ -367,7 +391,10 @@ export function IdeaSettingsModal({ isOpen, onClose }: Props) {
         {/* 底部操作 */}
         <div className="flex justify-between items-center px-6 py-4 border-t bg-gray-50">
           <button
-            onClick={resetToDefaults}
+            onClick={async () => {
+              await resetToDefaults()
+              setInitialized(false)
+            }}
             className="text-sm text-gray-500 hover:text-gray-700"
           >
             重置为默认配置
@@ -527,9 +554,11 @@ function ModelCard({
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">
-                {model.provider === 'openai' && (model.model.includes('gpt-5') || model.model.includes('o3') || model.model.includes('o4'))
-                  ? 'Max Completion Tokens'
-                  : 'Max Tokens'}
+                {model.provider === 'google'
+                  ? 'Max Output Tokens'
+                  : model.provider === 'openai' && (model.model.includes('gpt-5') || model.model.includes('o3') || model.model.includes('o4'))
+                    ? 'Max Completion Tokens'
+                    : 'Max Tokens'}
               </label>
               <input
                 type="number"

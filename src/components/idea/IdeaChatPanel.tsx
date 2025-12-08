@@ -5,8 +5,9 @@ import remarkGfm from 'remark-gfm'
 import rehypeKatex from 'rehype-katex'
 import rehypeHighlight from 'rehype-highlight'
 import ThinkingTimer from '../chat/ThinkingTimer'
+import IdeaPaperMentionPopup, { type IdeaPaperMentionPopupRef } from './IdeaPaperMentionPopup'
 import type { IdeaSession } from '../../types/idea'
-import type { Message } from '../../services/storage/db'
+import type { Message, Paper } from '../../services/storage/db'
 
 import 'katex/dist/katex.min.css'
 import 'highlight.js/styles/github-dark.css'
@@ -42,8 +43,14 @@ export default function IdeaChatPanel({
 }: IdeaChatPanelProps) {
 
   const [inputValue, setInputValue] = useState('')
+  const [mentionPopup, setMentionPopup] = useState<{
+    show: boolean
+    searchText: string
+    position: { top: number; left: number }
+  } | null>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const mentionPopupRef = useRef<IdeaPaperMentionPopupRef>(null)
 
   // 自动滚动到最新消息
   useEffect(() => {
@@ -59,7 +66,61 @@ export default function IdeaChatPanel({
     onSendMessage(message)
   }
 
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value
+    setInputValue(value)
+
+    // 检测 @ 符号触发
+    const cursorPos = e.target.selectionStart
+    const textBeforeCursor = value.substring(0, cursorPos)
+    const match = textBeforeCursor.match(/@(\S*)$/)
+
+    if (match && textareaRef.current && session) {
+      const rect = textareaRef.current.getBoundingClientRect()
+      setMentionPopup({
+        show: true,
+        searchText: match[1],
+        position: {
+          top: rect.top,
+          left: rect.left
+        }
+      })
+    } else {
+      setMentionPopup(null)
+    }
+  }
+
+  const handlePaperSelect = (paper: Paper) => {
+    if (!textareaRef.current) return
+
+    const cursorPos = textareaRef.current.selectionStart
+    const textBeforeCursor = inputValue.substring(0, cursorPos)
+    const textAfterCursor = inputValue.substring(cursorPos)
+
+    const atMatch = textBeforeCursor.match(/@(\S*)$/)
+    if (!atMatch) return
+
+    const atPos = cursorPos - atMatch[0].length
+    const mention = `@[${paper.title}](paperId:${paper.id})`
+
+    const newValue = inputValue.substring(0, atPos) + mention + textAfterCursor
+    setInputValue(newValue)
+    setMentionPopup(null)
+
+    setTimeout(() => {
+      textareaRef.current?.focus()
+      const newCursorPos = atPos + mention.length
+      textareaRef.current?.setSelectionRange(newCursorPos, newCursorPos)
+    }, 0)
+  }
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // 弹窗显示时，让弹窗处理键盘事件
+    if (mentionPopup && mentionPopupRef.current) {
+      const handled = mentionPopupRef.current.handleKeyDown(e)
+      if (handled) return
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSend()
@@ -175,14 +236,14 @@ export default function IdeaChatPanel({
         )}
 
         {/* 输入框 */}
-        <div className="flex-shrink-0 bg-white border-t p-4">
+        <div className="flex-shrink-0 bg-white border-t p-4 relative">
           <div className="flex space-x-2">
             <textarea
               ref={textareaRef}
               value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
+              onChange={handleInputChange}
               onKeyDown={handleKeyDown}
-              placeholder="讨论这个研究想法... (Shift+Enter换行,Enter发送)"
+              placeholder="讨论这个研究想法，输入 @ 引用论文... (Shift+Enter换行)"
               className="flex-1 border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none text-gray-900"
               rows={3}
               disabled={loading}
@@ -195,6 +256,18 @@ export default function IdeaChatPanel({
               {loading ? '...' : '发送'}
             </button>
           </div>
+
+          {/* 论文引用弹窗 */}
+          {mentionPopup && session && (
+            <IdeaPaperMentionPopup
+              ref={mentionPopupRef}
+              searchText={mentionPopup.searchText}
+              groupId={session.groupId}
+              onSelect={handlePaperSelect}
+              onClose={() => setMentionPopup(null)}
+              position={mentionPopup.position}
+            />
+          )}
         </div>
       </div>
     </div>
