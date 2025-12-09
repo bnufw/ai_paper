@@ -37,12 +37,12 @@ export default function MessageContent({ content }: MessageContentProps) {
 
   // 如果没有引用,直接返回纯文本
   if (parts.length === 0 || (parts.length === 1 && typeof parts[0] === 'string')) {
-    return <div className="whitespace-pre-wrap break-words">{content}</div>
+    return <div className="whitespace-pre-wrap break-words overflow-hidden">{content}</div>
   }
 
   // 渲染混合内容
   return (
-    <div className="whitespace-pre-wrap break-words">
+    <div className="whitespace-pre-wrap break-words overflow-hidden">
       {parts.map((part, index) => {
         if (typeof part === 'string') {
           return <span key={index}>{part}</span>

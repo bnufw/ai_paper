@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { type Message, getPaperMarkdown } from '../services/storage/db'
+import { type IdeaMessage, getIdeaMessages, saveIdeaMessage, deleteIdeaMessages, getPaperMarkdown } from '../services/storage/db'
 import { getSessionDirectory, readBestIdea, readAllIdeas } from '../services/idea/workflowStorage'
 import { sendMessageToGemini } from '../services/ai/geminiClient'
 import type { IdeaSession } from '../types/idea'
@@ -9,7 +9,7 @@ const MENTION_PATTERN = /@\[([^\]]+)\]\(paperId:(\d+)\)/g
 const MAX_MENTIONS = 3
 
 interface IdeaChatState {
-  messages: Message[]
+  messages: IdeaMessage[]
   loading: boolean
   error: string
   streamingText: string
@@ -55,7 +55,7 @@ export function useIdeaChat(session: IdeaSession | null) {
       return
     }
 
-    // 切换会话时清空消息和上下文
+    // 切换会话时清空状态（消息会从 DB 加载）
     setState(prev => ({
       ...prev,
       messages: [],
@@ -73,10 +73,11 @@ export function useIdeaChat(session: IdeaSession | null) {
           return
         }
 
-        // 并行加载 best_idea 和所有 ideas
-        const [bestIdea, allIdeas] = await Promise.all([
+        // 并行加载 best_idea、所有 ideas 和历史消息
+        const [bestIdea, allIdeas, savedMessages] = await Promise.all([
           readBestIdea(sessionDir),
-          readAllIdeas(sessionDir)
+          readAllIdeas(sessionDir),
+          getIdeaMessages(session!.id!)
         ])
 
         if (!bestIdea) {
@@ -100,6 +101,7 @@ export function useIdeaChat(session: IdeaSession | null) {
 
         setState(prev => ({
           ...prev,
+          messages: savedMessages,
           bestIdea,
           allIdeas,
           currentIdeaSlug: 'best_idea',
@@ -188,21 +190,25 @@ export function useIdeaChat(session: IdeaSession | null) {
       streamingStartTime: new Date()
     }))
 
-    // 创建用户消息
-    const userMessage: Message = {
-      conversationId: session.id!,
-      role: 'user',
-      content,
-      timestamp: new Date()
-    }
-
-    // 乐观更新：立即显示用户消息
-    setState(prev => ({
-      ...prev,
-      messages: [...prev.messages, userMessage]
-    }))
-
     try {
+      // 创建用户消息
+      const userMessage: IdeaMessage = {
+        sessionId: session.id!,
+        role: 'user',
+        content,
+        timestamp: new Date()
+      }
+
+      // 保存用户消息到 IndexedDB
+      const savedUserMsgId = await saveIdeaMessage(userMessage)
+      const savedUserMessage = { ...userMessage, id: savedUserMsgId }
+
+      // 乐观更新：立即显示用户消息
+      setState(prev => ({
+        ...prev,
+        messages: [...prev.messages, savedUserMessage]
+      }))
+
       // 构建历史消息
       const history = state.messages.slice(-20).map(msg => ({
         role: msg.role as 'user' | 'assistant',
@@ -225,8 +231,8 @@ export function useIdeaChat(session: IdeaSession | null) {
       )
 
       // 创建 AI 回复消息
-      const assistantMessage: Message = {
-        conversationId: session.id!,
+      const assistantMessage: IdeaMessage = {
+        sessionId: session.id!,
         role: 'assistant',
         content: result.content,
         timestamp: new Date(),
@@ -234,9 +240,13 @@ export function useIdeaChat(session: IdeaSession | null) {
         thinkingTimeMs: result.thinkingTimeMs
       }
 
+      // 保存 AI 回复到 IndexedDB
+      const savedAssistantMsgId = await saveIdeaMessage(assistantMessage)
+      const savedAssistantMessage = { ...assistantMessage, id: savedAssistantMsgId }
+
       setState(prev => ({
         ...prev,
-        messages: [...prev.messages, assistantMessage],
+        messages: [...prev.messages, savedAssistantMessage],
         loading: false,
         streamingText: '',
         streamingThought: '',
@@ -257,9 +267,12 @@ export function useIdeaChat(session: IdeaSession | null) {
   }, [session, state.loading, state.messages, loadMentionedPapers])
 
   // 清空对话
-  const clearMessages = useCallback(() => {
+  const clearMessages = useCallback(async () => {
+    if (session?.id) {
+      await deleteIdeaMessages(session.id)
+    }
     setState(prev => ({ ...prev, messages: [] }))
-  }, [])
+  }, [session?.id])
 
   return {
     ...state,

@@ -7,14 +7,15 @@ import rehypeHighlight from 'rehype-highlight'
 import ThinkingTimer from '../chat/ThinkingTimer'
 import IdeaPaperMentionPopup, { type IdeaPaperMentionPopupRef } from './IdeaPaperMentionPopup'
 import type { IdeaSession } from '../../types/idea'
-import type { Message, Paper } from '../../services/storage/db'
+import type { IdeaMessage, Paper } from '../../services/storage/db'
+import { exportIdeaChatToFile } from '../../services/idea/workflowStorage'
 
 import 'katex/dist/katex.min.css'
 import 'highlight.js/styles/github-dark.css'
 
 interface IdeaChatPanelProps {
   session: IdeaSession | null
-  messages: Message[]
+  messages: IdeaMessage[]
   loading: boolean
   error: string
   streamingText: string
@@ -43,6 +44,7 @@ export default function IdeaChatPanel({
 }: IdeaChatPanelProps) {
 
   const [inputValue, setInputValue] = useState('')
+  const [exporting, setExporting] = useState(false)
   const [mentionPopup, setMentionPopup] = useState<{
     show: boolean
     searchText: string
@@ -58,6 +60,20 @@ export default function IdeaChatPanel({
       messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
     }
   }, [messages, streamingText])
+
+  const handleExport = async () => {
+    if (!session?.id || !session.localPath || messages.length === 0) return
+
+    setExporting(true)
+    try {
+      await exportIdeaChatToFile(session.id, session.localPath)
+      alert('对话已导出到 chat_history.md')
+    } catch (err: any) {
+      alert(`导出失败: ${err.message}`)
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const handleSend = async () => {
     if (!inputValue.trim() || loading) return
@@ -146,6 +162,14 @@ export default function IdeaChatPanel({
         </div>
         <div className="flex items-center gap-2">
           <button
+            onClick={handleExport}
+            disabled={exporting || messages.length === 0}
+            className="text-xs text-gray-500 hover:text-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            title="导出对话到会话目录"
+          >
+            {exporting ? '导出中...' : '📤 导出'}
+          </button>
+          <button
             onClick={onClearMessages}
             className="text-xs text-gray-500 hover:text-red-500 transition-colors"
             title="清空对话"
@@ -175,7 +199,7 @@ export default function IdeaChatPanel({
           {/* 流式输出 */}
           {(streamingThought || streamingText || (loading && streamingStartTime)) && (
             <div className="flex justify-start">
-              <div className="max-w-[95%] bg-white text-gray-800 border border-gray-200 rounded-lg p-3">
+              <div className="max-w-[95%] bg-white text-gray-800 border border-gray-200 rounded-lg p-3 overflow-hidden">
                 {/* 流式思考过程 */}
                 {(streamingThought || (loading && streamingStartTime && !streamingText)) && (
                   <details className="mb-3 rounded-lg bg-blue-50/50 overflow-hidden border border-blue-100">
@@ -201,7 +225,7 @@ export default function IdeaChatPanel({
 
                 {/* 流式内容 */}
                 {streamingText && (
-                  <div className="prose prose-sm max-w-none">
+                  <div className="prose prose-sm max-w-none overflow-hidden">
                     <ReactMarkdown
                       remarkPlugins={[remarkMath, remarkGfm]}
                       rehypePlugins={[rehypeKatex, rehypeHighlight]}
@@ -277,7 +301,7 @@ export default function IdeaChatPanel({
 /**
  * 消息气泡组件
  */
-function MessageBubble({ message }: { message: Message }) {
+function MessageBubble({ message }: { message: IdeaMessage }) {
   const isUser = message.role === 'user'
 
   return (
@@ -285,7 +309,7 @@ function MessageBubble({ message }: { message: Message }) {
       <div
         className={`${
           isUser ? 'max-w-[70%]' : 'max-w-[95%]'
-        } rounded-lg p-3 ${
+        } rounded-lg p-3 overflow-hidden ${
           isUser
             ? 'bg-blue-600 text-white'
             : 'bg-white text-gray-800 border border-gray-200'
@@ -316,9 +340,9 @@ function MessageBubble({ message }: { message: Message }) {
         )}
 
         {isUser ? (
-          <div className="whitespace-pre-wrap">{message.content}</div>
+          <div className="whitespace-pre-wrap break-words overflow-hidden">{message.content}</div>
         ) : (
-          <div className="prose prose-sm max-w-none">
+          <div className="prose prose-sm max-w-none overflow-hidden">
             <ReactMarkdown
               remarkPlugins={[remarkMath, remarkGfm]}
               rehypePlugins={[rehypeKatex, rehypeHighlight]}

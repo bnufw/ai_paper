@@ -72,6 +72,17 @@ export interface Message {
   addedToNote?: boolean
 }
 
+// Idea 对话消息类型
+export interface IdeaMessage {
+  id?: number
+  sessionId: number  // 关联 ideaSessions.id
+  role: 'user' | 'assistant'
+  content: string
+  timestamp: Date
+  thoughts?: string
+  thinkingTimeMs?: number
+}
+
 // 设置类型
 export interface Settings {
   key: string
@@ -101,7 +112,8 @@ class PaperReaderDatabase extends Dexie {
   conversations!: Table<Conversation, number>
   messages!: Table<Message, number>
   settings!: Table<Settings, string>
-  ideaSessions!: Table<IdeaSession, number>  // 新增：Idea 工作流会话
+  ideaSessions!: Table<IdeaSession, number>
+  ideaMessages!: Table<IdeaMessage, number>  // 新增：Idea 对话消息
 
   constructor() {
     super('PaperReaderDB')
@@ -146,6 +158,20 @@ class PaperReaderDatabase extends Dexie {
       ideaSessions: '++id, groupId, timestamp, status, createdAt'
     }).upgrade(() => {
       console.log('[DB] 升级数据库到版本 5，新增 ideaSessions 表')
+    })
+
+    // v6: 新增 Idea 对话消息表
+    this.version(6).stores({
+      groups: '++id, createdAt',
+      papers: '++id, groupId, createdAt',
+      images: '++id, paperId, imageIndex',
+      conversations: '++id, paperId, createdAt',
+      messages: '++id, conversationId, timestamp',
+      settings: 'key',
+      ideaSessions: '++id, groupId, timestamp, status, createdAt',
+      ideaMessages: '++id, sessionId, timestamp'
+    }).upgrade(() => {
+      console.log('[DB] 升级数据库到版本 6，新增 ideaMessages 表')
     })
   }
 }
@@ -705,9 +731,10 @@ export async function getIdeaSession(sessionId: number): Promise<IdeaSession | u
 }
 
 /**
- * 删除 Idea 会话
+ * 删除 Idea 会话及其消息
  */
 export async function deleteIdeaSession(sessionId: number): Promise<void> {
+  await deleteIdeaMessages(sessionId)
   await db.ideaSessions.delete(sessionId)
 }
 
@@ -716,4 +743,67 @@ export async function deleteIdeaSession(sessionId: number): Promise<void> {
  */
 export async function getAllIdeaSessions(): Promise<IdeaSession[]> {
   return db.ideaSessions.orderBy('createdAt').reverse().toArray()
+}
+
+// ========== Idea 对话消息函数 ==========
+
+/**
+ * 获取 Idea 会话的所有消息
+ */
+export async function getIdeaMessages(sessionId: number): Promise<IdeaMessage[]> {
+  return db.ideaMessages
+    .where('sessionId')
+    .equals(sessionId)
+    .sortBy('timestamp')
+}
+
+/**
+ * 保存 Idea 对话消息
+ */
+export async function saveIdeaMessage(message: Omit<IdeaMessage, 'id'>): Promise<number> {
+  return await db.ideaMessages.add(message as IdeaMessage)
+}
+
+/**
+ * 删除 Idea 会话的所有消息
+ */
+export async function deleteIdeaMessages(sessionId: number): Promise<void> {
+  await db.ideaMessages.where('sessionId').equals(sessionId).delete()
+}
+
+/**
+ * 导出 Idea 对话为 Markdown
+ */
+export async function exportIdeaChat(sessionId: number): Promise<string> {
+  const session = await db.ideaSessions.get(sessionId)
+  if (!session) {
+    throw new Error('会话不存在')
+  }
+
+  const messages = await getIdeaMessages(sessionId)
+
+  const lines: string[] = []
+
+  lines.push(`# Idea 对话记录`)
+  lines.push('')
+  lines.push(`**分组**: ${session.groupName}`)
+  lines.push(`**创建时间**: ${session.createdAt.toLocaleString('zh-CN')}`)
+  if (session.completedAt) {
+    lines.push(`**完成时间**: ${session.completedAt.toLocaleString('zh-CN')}`)
+  }
+  lines.push('')
+  lines.push('---')
+  lines.push('')
+
+  for (const msg of messages) {
+    const role = msg.role === 'user' ? '👤 用户' : '🤖 助手'
+    const time = new Date(msg.timestamp).toLocaleString('zh-CN')
+
+    lines.push(`## ${role} (${time})`)
+    lines.push('')
+    lines.push(msg.content)
+    lines.push('')
+  }
+
+  return lines.join('\n')
 }

@@ -282,7 +282,7 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
               <div
                 className={`${
                   msg.role === 'user' ? 'max-w-[70%]' : 'max-w-[95%]'
-                } rounded-lg p-3 ${
+                } rounded-lg p-3 overflow-hidden ${
                   msg.role === 'user'
                     ? 'bg-blue-600 text-white'
                     : msg.addedToNote
@@ -380,7 +380,7 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
                     )}
 
                     {/* 正常内容 */}
-                    <div className="prose prose-sm max-w-none">
+                    <div className="prose prose-sm max-w-none overflow-hidden">
                       <ReactMarkdown
                         remarkPlugins={[remarkMath, remarkGfm]}
                         rehypePlugins={[rehypeKatex, rehypeHighlight]}
@@ -427,7 +427,7 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
         {/* 流式输出显示 - 有思考内容、正式内容或正在加载时显示 */}
         {(streamingThought || streamingText || (loading && streamingStartTime)) && (
           <div className="flex justify-start">
-            <div className="max-w-[95%] bg-white text-gray-800 border border-gray-200 rounded-lg p-3">
+            <div className="max-w-[95%] bg-white text-gray-800 border border-gray-200 rounded-lg p-3 overflow-hidden">
               {/* 流式思考过程 - 有思考内容或正在加载时显示 */}
               {(streamingThought || (loading && streamingStartTime && !streamingText)) && (
                 <details className="mb-3 rounded-lg bg-blue-50/50 overflow-hidden border border-blue-100">
@@ -455,7 +455,7 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
 
               {/* 流式内容 */}
               {streamingText && (
-                <div className="prose prose-sm max-w-none">
+                <div className="prose prose-sm max-w-none overflow-hidden">
                   <ReactMarkdown
                     remarkPlugins={[remarkMath, remarkGfm]}
                     rehypePlugins={[rehypeKatex, rehypeHighlight]}
