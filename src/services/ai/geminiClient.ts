@@ -1,69 +1,6 @@
 import { GoogleGenAI } from '@google/genai'
 import { getAPIKey, getGeminiSettings, type MessageImage } from '../storage/db'
-
-// 可重试错误配置
-const MAX_RETRIES = 8 // 最多重试 8 次
-const INITIAL_DELAY_MS = 1000 // 初始延迟 1 秒
-const MAX_DELAY_MS = 30000 // 最大延迟 30 秒
-
-// 可重试的 HTTP 状态码
-const RETRIABLE_STATUS_CODES = [429, 500, 502, 503, 504]
-
-/**
- * 判断错误是否为可重试的临时性错误
- */
-function isRetriableError(error: any): boolean {
-  // 优先检查 status code
-  if (error.status && RETRIABLE_STATUS_CODES.includes(error.status)) {
-    return true
-  }
-  // 检查错误信息
-  const msg = (error.message || '').toLowerCase()
-  return msg.includes('503') ||
-    msg.includes('502') ||
-    msg.includes('429') ||
-    msg.includes('service unavailable') ||
-    msg.includes('overloaded') ||
-    msg.includes('rate limit') ||
-    msg.includes('resource_exhausted') ||
-    msg.includes('unavailable')
-}
-
-/**
- * 延迟函数
- */
-function delay(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms))
-}
-
-/**
- * 带指数退避的重试包装器
- */
-async function withRetry<T>(
-  fn: () => Promise<T>,
-  onRetry?: (attempt: number, delayMs: number) => void
-): Promise<T> {
-  let lastError: any
-  for (let attempt = 0; attempt < MAX_RETRIES + 1; attempt++) {
-    try {
-      return await fn()
-    } catch (error: any) {
-      lastError = error
-      // 非可重试错误或已达最大重试次数，直接抛出
-      if (!isRetriableError(error) || attempt >= MAX_RETRIES) {
-        throw error
-      }
-      // 指数退避 + 轻微随机抖动
-      const baseDelay = Math.min(INITIAL_DELAY_MS * Math.pow(2, attempt), MAX_DELAY_MS)
-      const jitter = baseDelay * 0.1 * Math.random() // 10% 随机抖动
-      const delayMs = Math.round(baseDelay + jitter)
-      console.log(`[Gemini] 请求失败 (${error.status || error.message})，第 ${attempt + 1}/${MAX_RETRIES} 次重试，等待 ${delayMs}ms`)
-      onRetry?.(attempt + 1, delayMs)
-      await delay(delayMs)
-    }
-  }
-  throw lastError
-}
+import { withRetry } from './retryUtils'
 
 /**
  * 使用Gemini API进行对话
@@ -207,10 +144,12 @@ export async function sendMessageToGemini(
       // 带 503 重试的流式请求
       const stream = await withRetry(
         () => chat.sendMessageStream({ message: userParts }),
-        () => {
-          // 重试时重置流式状态
-          thoughts = ''
-          thinkingEndTime = undefined
+        {
+          onRetry: () => {
+            // 重试时重置流式状态
+            thoughts = ''
+            thinkingEndTime = undefined
+          }
         }
       )
 
@@ -280,10 +219,12 @@ export async function sendMessageToGemini(
       // 带 503 重试的非流式请求
       const result = await withRetry(
         () => chat.sendMessage({ message: userParts }),
-        () => {
-          // 重试时重置状态
-          thoughts = ''
-          thinkingEndTime = undefined
+        {
+          onRetry: () => {
+            // 重试时重置状态
+            thoughts = ''
+            thinkingEndTime = undefined
+          }
         }
       )
 
