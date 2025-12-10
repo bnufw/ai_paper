@@ -30,6 +30,7 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
     messages,
     conversations,
     currentConversationId,
+    lastClearAt,
     loading,
     error,
     streamingText,
@@ -44,6 +45,7 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
     deleteConversation,
     renameConversation,
     exportConversation,
+    clearMessages,
     markAsAddedToNote
   } = useChat(paperId)
 
@@ -58,6 +60,10 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
   } | null>(null)
   const [modelName, setModelName] = useState('Gemini')
   const [addingToNoteId, setAddingToNoteId] = useState<number | null>(null)
+  const [slashCommand, setSlashCommand] = useState<{
+    show: boolean
+    position: { top: number; left: number }
+  } | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -153,9 +159,23 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
     const value = e.target.value
     setInputValue(value)
 
-    // 检测@符号触发
     const cursorPos = e.target.selectionStart
     const textBeforeCursor = value.substring(0, cursorPos)
+
+    // 检测斜杠命令触发（仅在行首输入 / 时）
+    if (textBeforeCursor === '/' && textareaRef.current) {
+      const rect = textareaRef.current.getBoundingClientRect()
+      setSlashCommand({
+        show: true,
+        position: { top: rect.top, left: rect.left }
+      })
+      setMentionPopup(null)
+      return
+    } else {
+      setSlashCommand(null)
+    }
+
+    // 检测@符号触发
     const match = textBeforeCursor.match(/@(\S*)$/)
 
     if (match && textareaRef.current) {
@@ -201,6 +221,18 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
     }, 0)
   }
 
+  // 处理斜杠命令选择
+  const handleSlashCommand = (command: string) => {
+    setSlashCommand(null)
+    setInputValue('')
+
+    if (command === 'clear') {
+      clearMessages()
+    }
+
+    textareaRef.current?.focus()
+  }
+
   const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const items = e.clipboardData.items
     const imageFiles: File[] = []
@@ -228,6 +260,19 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // 斜杠命令弹窗显示时，处理键盘事件
+    if (slashCommand) {
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        handleSlashCommand('clear')
+        return
+      } else if (e.key === 'Escape') {
+        e.preventDefault()
+        setSlashCommand(null)
+        return
+      }
+    }
+
     // 弹窗显示时，让弹窗处理键盘事件
     if (mentionPopup && mentionPopupRef.current) {
       const handled = mentionPopupRef.current.handleKeyDown(e)
@@ -235,7 +280,7 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
         return
       }
     }
-    
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSend()
@@ -243,9 +288,9 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
   }
 
   return (
-    <div className="h-full flex flex-col bg-gray-50">
+    <div className="h-full w-full flex flex-col bg-gray-50 overflow-hidden">
       {/* 顶部：会话列表 + 模型名 */}
-      <div className="bg-white border-b flex items-center">
+      <div className="bg-white border-b flex items-center min-w-0 overflow-hidden">
         <ConversationList
           conversations={conversations}
           currentConversationId={currentConversationId}
@@ -253,6 +298,7 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
           onDelete={deleteConversation}
           onRename={renameConversation}
           onExport={exportConversation}
+          onClear={clearMessages}
           onNewConversation={createNewConversation}
         />
         
@@ -274,11 +320,25 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
             <p className="text-sm">向AI提问关于这篇论文的任何问题</p>
           </div>
         ) : (
-          messages.map((msg, index) => (
-            <div
-              key={index}
-              className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
+          messages.map((msg, index) => {
+            // 检查是否需要在此消息前显示分割线
+            const showClearDivider = lastClearAt &&
+              msg.timestamp > lastClearAt &&
+              (index === 0 || messages[index - 1].timestamp <= lastClearAt)
+
+            return (
+              <div key={msg.id || index}>
+                {/* 上下文清除分割线 */}
+                {showClearDivider && (
+                  <div className="flex items-center gap-3 my-4">
+                    <div className="flex-1 h-px bg-orange-300"></div>
+                    <span className="text-xs text-orange-500 font-medium px-2">上下文已清除</span>
+                    <div className="flex-1 h-px bg-orange-300"></div>
+                  </div>
+                )}
+                <div
+                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                >
               <div
                 className={`${
                   msg.role === 'user' ? 'max-w-[70%]' : 'max-w-[95%]'
@@ -421,7 +481,17 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
                 </div>
               </div>
             </div>
-          ))
+          </div>
+        )})
+        )}
+
+        {/* 尾部分割线：清空后尚无新消息时显示 */}
+        {lastClearAt && messages.length > 0 && !messages.some(m => m.timestamp > lastClearAt) && (
+          <div className="flex items-center gap-3 my-4">
+            <div className="flex-1 h-px bg-orange-300"></div>
+            <span className="text-xs text-orange-500 font-medium px-2">上下文已清除</span>
+            <div className="flex-1 h-px bg-orange-300"></div>
+          </div>
         )}
 
         {/* 流式输出显示 - 有思考内容、正式内容或正在加载时显示 */}
@@ -551,6 +621,28 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
           initialIndex={viewerInitialIndex}
           onClose={handleCloseViewer}
         />
+      )}
+
+      {/* 斜杠命令弹窗 */}
+      {slashCommand && (
+        <div
+          className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[160px]"
+          style={{
+            bottom: `calc(100vh - ${slashCommand.position.top}px + 8px)`,
+            left: slashCommand.position.left
+          }}
+        >
+          <button
+            onClick={() => handleSlashCommand('clear')}
+            className="w-full px-3 py-2 text-left hover:bg-blue-50 flex items-center gap-2 text-sm"
+          >
+            <span className="text-orange-500">🧹</span>
+            <div>
+              <div className="font-medium text-gray-800">/clear</div>
+              <div className="text-xs text-gray-500">清空对话上下文</div>
+            </div>
+          </button>
+        </div>
       )}
 
       {/* 论文引用选择器 */}

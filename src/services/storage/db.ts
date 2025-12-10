@@ -45,6 +45,7 @@ export interface Conversation {
   title: string
   createdAt: Date
   updatedAt: Date
+  lastClearAt?: Date  // 上下文清除时间点，发消息时只取此时间之后的历史
 }
 
 // 消息图片类型
@@ -318,6 +319,18 @@ export async function deletePaper(paperId: number): Promise<void> {
 export async function deleteConversation(conversationId: number): Promise<void> {
   await db.messages.where('conversationId').equals(conversationId).delete()
   await db.conversations.delete(conversationId)
+}
+
+/**
+ * 清空对话上下文（设置清除时间点，不删除消息）
+ */
+export async function clearConversationMessages(conversationId: number): Promise<Date> {
+  const now = new Date()
+  await db.conversations.update(conversationId, {
+    lastClearAt: now,
+    updatedAt: now
+  })
+  return now
 }
 
 /**
