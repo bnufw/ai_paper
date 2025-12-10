@@ -562,8 +562,8 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
       )}
 
       {/* 输入框 */}
-      <div className="bg-white border-t p-4">
-        <div className="flex flex-col gap-2">
+      <div className="bg-white border-t p-3">
+        <div className="flex flex-col gap-2 max-w-3xl mx-auto">
           {/* 编辑提示 */}
           {editingMessageId && (
             <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
@@ -579,33 +579,33 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
               </button>
             </div>
           )}
-          
+
           {/* 图片预览 */}
           <ImagePreview images={pendingImages} onRemove={handleRemoveImage} />
-          
-          <div className="flex space-x-2">
+
+          <div className="flex gap-2 items-end">
             {/* 图片上传按钮 */}
             <ImageUploadButton
               onImagesSelected={handleImagesSelected}
               disabled={loading}
               maxCount={4}
             />
-            
+
             <textarea
               ref={textareaRef}
               value={inputValue}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
-              placeholder="输入您的问题... (Shift+Enter换行,Enter发送)"
-              className="flex-1 border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none text-gray-900"
-              rows={3}
+              placeholder="输入问题... (Enter发送)"
+              className="flex-1 border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none text-gray-900 text-sm"
+              rows={2}
               disabled={loading}
             />
             <button
               onClick={handleSend}
               disabled={(!inputValue.trim() && pendingImages.length === 0) || loading}
-              className="px-6 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+              className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
             >
               {loading ? '...' : '发送'}
             </button>
