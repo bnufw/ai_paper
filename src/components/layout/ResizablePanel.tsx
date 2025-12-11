@@ -74,7 +74,7 @@ function ResizablePanel({
       {/* 左侧面板 */}
       <div
         style={{ width: collapsed ? '100%' : `${leftWidth}%` }}
-        className={`flex flex-col overflow-hidden ${!isDragging ? 'transition-[width] duration-300' : ''}`}
+        className={`flex flex-col min-w-0 overflow-hidden ${!isDragging ? 'transition-[width] duration-300' : ''}`}
       >
         {leftPanel}
       </div>

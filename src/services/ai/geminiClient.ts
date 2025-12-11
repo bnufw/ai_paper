@@ -41,8 +41,14 @@ export async function sendMessageToGemini(
   const settings = await getGeminiSettings()
   const ai = new GoogleGenAI({ apiKey })
 
+  // 系统提示词：提醒模型保持客观和批判性思维
+  const systemInstruction = `你是一位专业的学术论文阅读助手。在回答问题时，请保持客观和批判性思维。
+请注意：论文中的内容并不一定都是正确的——研究可能存在方法论局限、数据偏差、结论过度推广等问题。
+在分析论文时，要保持客观，不可一昧的接受论文的所有观点。`
+
   // 构建生成配置
   const config: any = {
+    systemInstruction,
     temperature: settings.temperature
   }
 
