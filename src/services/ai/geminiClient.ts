@@ -147,56 +147,70 @@ export async function sendMessageToGemini(
         onGenerationStart(generationStartTime)
       }
 
-      // 带 503 重试的流式请求
-      const stream = await withRetry(
-        () => chat.sendMessageStream({ message: userParts }),
+      // 流式请求 + 流消费的完整重试逻辑
+      // 503 可能发生在：1) 建立连接时 2) 消费流数据时
+      // 因此需要将整个流程包装在重试中
+      const streamResult = await withRetry(
+        async () => {
+          const stream = await chat.sendMessageStream({ message: userParts })
+
+          let streamThoughts = ''
+          let streamThinkingEndTime: number | undefined
+          let streamFullText = ''
+          let streamGroundingMetadata: any = undefined
+          let streamWebSearchQueries: string[] = []
+
+          for await (const chunk of stream) {
+            const candidate = chunk.candidates?.[0]
+
+            if (candidate) {
+              if (candidate.groundingMetadata) {
+                streamGroundingMetadata = candidate.groundingMetadata
+                if (streamGroundingMetadata.webSearchQueries) {
+                  streamWebSearchQueries = streamGroundingMetadata.webSearchQueries
+                }
+              }
+
+              if (candidate.content?.parts) {
+                for (const part of candidate.content.parts) {
+                  if (part.thought) {
+                    streamThoughts += part.text || ''
+                    if (onThought) {
+                      onThought(streamThoughts)
+                    }
+                    streamThinkingEndTime = Date.now()
+                  } else {
+                    const chunkText = part.text || ''
+                    streamFullText += chunkText
+                    onStream(streamFullText)
+                  }
+                }
+              }
+            }
+          }
+
+          return {
+            thoughts: streamThoughts,
+            thinkingEndTime: streamThinkingEndTime,
+            fullText: streamFullText,
+            groundingMetadata: streamGroundingMetadata,
+            webSearchQueries: streamWebSearchQueries
+          }
+        },
         {
           onRetry: () => {
-            // 重试时重置流式状态
-            thoughts = ''
-            thinkingEndTime = undefined
+            // 重试时重置 UI 状态，让用户知道正在重新开始
+            if (onThought) onThought('')
+            if (onStream) onStream('')
           }
         }
       )
 
-      let fullText = ''
-
-      for await (const chunk of stream) {
-        // 处理候选内容
-        const candidate = chunk.candidates?.[0]
-
-        if (candidate) {
-          // 提取grounding元数据
-          if (candidate.groundingMetadata) {
-            groundingMetadata = candidate.groundingMetadata
-
-            // 提取搜索查询
-            if (groundingMetadata.webSearchQueries) {
-              webSearchQueries = groundingMetadata.webSearchQueries
-            }
-          }
-
-          // 处理内容parts
-          if (candidate.content?.parts) {
-            for (const part of candidate.content.parts) {
-              // 检查是否为思考内容
-              if (part.thought) {
-                thoughts += part.text || ''
-                if (onThought) {
-                  onThought(thoughts)
-                }
-                // 记录思考结束时间（每次收到思考内容都更新）
-                thinkingEndTime = Date.now()
-              } else {
-                // 正常内容
-                const chunkText = part.text || ''
-                fullText += chunkText
-                onStream(fullText)
-              }
-            }
-          }
-        }
-      }
+      // 提取流消费结果
+      thoughts = streamResult.thoughts
+      thinkingEndTime = streamResult.thinkingEndTime
+      groundingMetadata = streamResult.groundingMetadata
+      webSearchQueries = streamResult.webSearchQueries
 
       generationEndTime = new Date()
 
@@ -206,7 +220,7 @@ export async function sendMessageToGemini(
         : undefined
 
       return {
-        content: fullText,
+        content: streamResult.fullText,
         thoughts: thoughts || undefined,
         thinkingTimeMs,
         generationStartTime,
