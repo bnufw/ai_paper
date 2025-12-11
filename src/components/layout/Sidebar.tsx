@@ -6,6 +6,7 @@ import {
   createGroup,
   renameGroup,
   deleteGroup,
+  updatePaperTitle,
   type Paper,
   type PaperGroup,
   type IdeaSession
@@ -14,7 +15,7 @@ import { deletePaperFromLocal } from '../../services/storage/paperStorage'
 import { cleanupPaperCache } from '../../services/ai/cacheService'
 import GroupList from './GroupList'
 import IdeaSessionList from './IdeaSessionList'
-import { IdeaWorkflowRunner, IdeaSettingsModal } from '../idea'
+import { IdeaWorkflowRunner, IdeaSettingsModal, CrossSessionEvaluator } from '../idea'
 
 interface SidebarProps {
   currentPaperId: number | null
@@ -44,6 +45,7 @@ export default function Sidebar({
   // Idea 工作流相关状态
   const [ideaWorkflowOpen, setIdeaWorkflowOpen] = useState(false)
   const [ideaSettingsOpen, setIdeaSettingsOpen] = useState(false)
+  const [crossSessionEvaluatorOpen, setCrossSessionEvaluatorOpen] = useState(false)
   const [selectedGroup, setSelectedGroup] = useState<{ id: number; name: string } | null>(null)
 
   // 加载论文和分组列表
@@ -105,6 +107,12 @@ export default function Sidebar({
   // 重命名分组
   const handleRenameGroup = async (groupId: number, newName: string) => {
     await renameGroup(groupId, newName)
+    await loadData()
+  }
+
+  // 重命名论文
+  const handleRenamePaper = async (paperId: number, newTitle: string) => {
+    await updatePaperTitle(paperId, newTitle)
     await loadData()
   }
 
@@ -188,6 +196,7 @@ export default function Sidebar({
             currentPaperId={currentPaperId}
             onSelectPaper={onSelectPaper}
             onDeletePaper={handleDelete}
+            onRenamePaper={handleRenamePaper}
             onCreateGroup={handleCreateGroup}
             onRenameGroup={handleRenameGroup}
             onDeleteGroup={handleDeleteGroup}
@@ -198,11 +207,23 @@ export default function Sidebar({
 
       {/* Idea 会话历史列表 */}
       {!collapsed && (
-        <IdeaSessionList
-          currentSessionId={currentIdeaSessionId}
-          onSelectSession={onSelectIdeaSession}
-          collapsed={collapsed}
-        />
+        <>
+          <IdeaSessionList
+            currentSessionId={currentIdeaSessionId}
+            onSelectSession={onSelectIdeaSession}
+            collapsed={collapsed}
+          />
+          {/* 跨会话综合评估入口 */}
+          <div className="px-4 pb-2">
+            <button
+              onClick={() => setCrossSessionEvaluatorOpen(true)}
+              className="w-full text-left px-3 py-2 text-sm text-yellow-400 hover:bg-gray-700 rounded flex items-center gap-2"
+            >
+              <span>📊</span>
+              <span>跨会话综合评估</span>
+            </button>
+          </div>
+        </>
       )}
 
       {/* 底部：设置和统计信息 */}
@@ -249,6 +270,12 @@ export default function Sidebar({
       <IdeaSettingsModal
         isOpen={ideaSettingsOpen}
         onClose={() => setIdeaSettingsOpen(false)}
+      />
+
+      {/* 跨会话综合评估弹窗 */}
+      <CrossSessionEvaluator
+        isOpen={crossSessionEvaluatorOpen}
+        onClose={() => setCrossSessionEvaluatorOpen(false)}
       />
     </div>
   )

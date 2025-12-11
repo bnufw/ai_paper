@@ -287,6 +287,16 @@ export async function deletePaper(paperId: number): Promise<void> {
 }
 
 /**
+ * 更新论文标题（保持localPath不变）
+ */
+export async function updatePaperTitle(paperId: number, newTitle: string): Promise<void> {
+  await db.papers.update(paperId, {
+    title: newTitle.trim(),
+    updatedAt: new Date()
+  })
+}
+
+/**
  * 删除对话及其消息
  */
 export async function deleteConversation(conversationId: number): Promise<void> {

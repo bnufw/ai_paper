@@ -3,6 +3,7 @@ import { convertPDFToMarkdown, type OCRResult } from '../../services/pdf/mistral
 import { createPaper, getAllGroups, type PaperGroup } from '../../services/storage/db'
 import { savePaperToLocal } from '../../services/storage/paperStorage'
 import { getDirectoryHandle } from '../../services/storage/fileSystem'
+import { extractPaperTitle } from '../../services/ai/titleExtractor'
 
 interface PDFUploaderProps {
   onUploadComplete: (paperId: number) => void
@@ -75,7 +76,20 @@ export default function PDFUploader({ onUploadComplete }: PDFUploaderProps) {
       // 保存到本地文件系统
       setProgress({ stage: '正在保存到本地...', percent: 90 })
 
-      const title = file.name.replace('.pdf', '')
+      // 尝试使用AI识别标题，失败则回退到文件名
+      let title = file.name.replace('.pdf', '')
+
+      try {
+        setProgress({ stage: '正在识别论文标题...', percent: 85 })
+        const aiTitle = await extractPaperTitle(markdown)
+        if (aiTitle) {
+          title = aiTitle
+        }
+      } catch (err) {
+        console.warn('AI标题识别失败，使用文件名:', err)
+        // 静默失败，不影响上传流程
+      }
+
       const selectedGroup = groups.find(g => g.id === selectedGroupId)
       const groupName = selectedGroup?.name || '未分类'
 

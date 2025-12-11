@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { type Paper, type PaperGroup } from '../../services/storage/db'
+import { type Paper, type PaperGroup, updatePaperTitle } from '../../services/storage/db'
 import GroupNoteModal from '../note/GroupNoteModal'
 import DomainKnowledgeModal from '../knowledge/DomainKnowledgeModal'
+import ContextMenu, { type ContextMenuItem } from '../common/ContextMenu'
 
 interface GroupListProps {
   groups: PaperGroup[]
@@ -9,6 +10,7 @@ interface GroupListProps {
   currentPaperId: number | null
   onSelectPaper: (paperId: number) => void
   onDeletePaper: (paperId: number) => void
+  onRenamePaper?: (paperId: number, newTitle: string) => Promise<void>
   onCreateGroup: () => void
   onRenameGroup: (groupId: number, newName: string) => void
   onDeleteGroup: (groupId: number) => void
@@ -21,6 +23,7 @@ export default function GroupList({
   currentPaperId,
   onSelectPaper,
   onDeletePaper,
+  onRenamePaper,
   onCreateGroup,
   onRenameGroup,
   onDeleteGroup,
@@ -31,6 +34,14 @@ export default function GroupList({
   const [editingName, setEditingName] = useState('')
   const [noteModalGroup, setNoteModalGroup] = useState<string | null>(null)
   const [knowledgeModalGroup, setKnowledgeModalGroup] = useState<{ id: number; name: string } | null>(null)
+
+  // 论文相关状态
+  const [paperContextMenu, setPaperContextMenu] = useState<{ x: number; y: number; paperId: number } | null>(null)
+  const [editingPaperId, setEditingPaperId] = useState<number | null>(null)
+  const [editingPaperTitle, setEditingPaperTitle] = useState('')
+
+  // 分组右键菜单状态
+  const [groupContextMenu, setGroupContextMenu] = useState<{ x: number; y: number; groupId: number } | null>(null)
 
   // 切换分组展开/折叠
   const toggleGroup = (groupId: number) => {
@@ -67,6 +78,106 @@ export default function GroupList({
     }
   }
 
+  // 论文重命名相关函数
+  const startEditPaper = (paper: Paper) => {
+    setEditingPaperId(paper.id!)
+    setEditingPaperTitle(paper.title)
+  }
+
+  const cancelEditPaper = () => {
+    setEditingPaperId(null)
+    setEditingPaperTitle('')
+  }
+
+  const finishEditPaper = async () => {
+    if (!editingPaperId || !editingPaperTitle.trim()) {
+      cancelEditPaper()
+      return
+    }
+
+    try {
+      if (onRenamePaper) {
+        await onRenamePaper(editingPaperId, editingPaperTitle.trim())
+      } else {
+        // 如果没有提供回调，直接更新数据库
+        await updatePaperTitle(editingPaperId, editingPaperTitle.trim())
+      }
+      cancelEditPaper()
+    } catch (err) {
+      console.error('重命名论文失败:', err)
+      alert('重命名失败，请重试')
+    }
+  }
+
+  const handlePaperContextMenu = (e: React.MouseEvent, paper: Paper) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setPaperContextMenu({ x: e.clientX, y: e.clientY, paperId: paper.id! })
+  }
+
+  const handlePaperDoubleClick = (e: React.MouseEvent, paper: Paper) => {
+    e.stopPropagation()
+    startEditPaper(paper)
+  }
+
+  const getPaperContextMenuItems = (paper: Paper): ContextMenuItem[] => [
+    {
+      label: '重命名',
+      icon: '✏️',
+      onClick: () => startEditPaper(paper)
+    },
+    {
+      label: '删除',
+      icon: '🗑️',
+      onClick: () => onDeletePaper(paper.id!),
+      danger: true
+    }
+  ]
+
+  // 分组右键菜单相关函数
+  const handleGroupContextMenu = (e: React.MouseEvent, group: PaperGroup) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setGroupContextMenu({ x: e.clientX, y: e.clientY, groupId: group.id! })
+  }
+
+  const getGroupContextMenuItems = (group: PaperGroup): ContextMenuItem[] => {
+    const items: ContextMenuItem[] = [
+      {
+        label: '重命名',
+        icon: '✏️',
+        onClick: () => {
+          setEditingGroupId(group.id!)
+          setEditingName(group.name)
+        }
+      }
+    ]
+
+    if (onGenerateIdea) {
+      items.push({
+        label: '生成 Idea',
+        icon: '🚀',
+        onClick: () => onGenerateIdea(group.id!, group.name)
+      })
+    }
+
+    items.push(
+      { divider: true },
+      {
+        label: '删除分组',
+        icon: '🗑️',
+        onClick: () => {
+          if (confirm('确定删除此分组？论文将移至未分类。')) {
+            onDeleteGroup(group.id!)
+          }
+        },
+        danger: true
+      }
+    )
+
+    return items
+  }
+
   // 按分组分类论文
   const uncategorizedPapers = papers.filter(p => !p.groupId)
   const groupedPapers = new Map<number, Paper[]>()
@@ -94,15 +205,15 @@ export default function GroupList({
 
       {/* 未分类 */}
       <div className="mb-2">
-        <div
-          onClick={() => uncategorizedPapers.length > 0 && toggleGroup(-1)}
-          className={`px-3 py-2 flex items-center justify-between group ${
-            uncategorizedPapers.length > 0 ? 'cursor-pointer hover:bg-gray-700' : ''
-          }`}
-        >
+        <div className="px-3 py-2 flex items-center justify-between group">
           <div className="flex items-center">
             {uncategorizedPapers.length > 0 && (
-              <span className="mr-2">{expandedGroups.has(-1) ? '▼' : '▶'}</span>
+              <span
+                className="mr-2 cursor-pointer hover:text-blue-400"
+                onClick={() => toggleGroup(-1)}
+              >
+                {expandedGroups.has(-1) ? '▼' : '▶'}
+              </span>
             )}
             {uncategorizedPapers.length === 0 && <span className="mr-2 opacity-0">▶</span>}
             <span className="text-sm text-gray-400">未分类</span>
@@ -133,6 +244,13 @@ export default function GroupList({
                   e.stopPropagation()
                   onDeletePaper(paper.id!)
                 }}
+                onContextMenu={(e) => handlePaperContextMenu(e, paper)}
+                onDoubleClick={(e) => handlePaperDoubleClick(e, paper)}
+                isEditing={editingPaperId === paper.id}
+                editingTitle={editingPaperTitle}
+                onTitleChange={setEditingPaperTitle}
+                onFinishEdit={finishEditPaper}
+                onCancelEdit={cancelEditPaper}
               />
             ))}
           </div>
@@ -147,12 +265,17 @@ export default function GroupList({
         return (
           <div key={group.id} className="mb-2">
             <div
-              onClick={() => toggleGroup(group.id!)}
-              className="px-3 py-2 cursor-pointer hover:bg-gray-700 flex items-center justify-between group"
+              className="px-3 py-2 flex items-center justify-between group hover:bg-gray-700"
+              onContextMenu={(e) => handleGroupContextMenu(e, group)}
             >
               <div className="flex items-center flex-1 min-w-0">
-                <span className="mr-2">{isExpanded ? '▼' : '▶'}</span>
-                
+                <span
+                  className="mr-2 cursor-pointer hover:text-blue-400"
+                  onClick={() => toggleGroup(group.id!)}
+                >
+                  {isExpanded ? '▼' : '▶'}
+                </span>
+
                 {editingGroupId === group.id ? (
                   <input
                     type="text"
@@ -171,20 +294,22 @@ export default function GroupList({
                     autoFocus
                   />
                 ) : (
-                  <span className="text-sm font-medium truncate">{group.name}</span>
+                  <span className="text-sm font-medium truncate">
+                    {group.name}
+                  </span>
                 )}
-                
+
                 <span className="ml-2 text-xs text-gray-500">({groupPapers.length})</span>
               </div>
 
               {/* 分组操作按钮 */}
-              <div className="opacity-0 group-hover:opacity-100 flex items-center ml-2">
+              <div className="flex items-center ml-2">
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
                     setKnowledgeModalGroup({ id: group.id!, name: group.name })
                   }}
-                  className="text-blue-400 hover:text-blue-300 mr-2"
+                  className="opacity-0 group-hover:opacity-100 text-blue-400 hover:text-blue-300 mr-2"
                   title="领域知识"
                 >
                   📚
@@ -194,7 +319,7 @@ export default function GroupList({
                     e.stopPropagation()
                     setNoteModalGroup(group.name)
                   }}
-                  className="text-gray-400 hover:text-white mr-2"
+                  className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-white mr-2"
                   title="分组笔记"
                 >
                   📝
@@ -205,7 +330,7 @@ export default function GroupList({
                       e.stopPropagation()
                       onGenerateIdea(group.id!, group.name)
                     }}
-                    className="text-yellow-400 hover:text-yellow-300 mr-2"
+                    className="opacity-0 group-hover:opacity-100 text-yellow-400 hover:text-yellow-300 mr-2"
                     title="生成 Idea"
                   >
                     🚀
@@ -220,7 +345,7 @@ export default function GroupList({
                 </button>
                 <button
                   onClick={(e) => handleDeleteGroup(group.id!, e)}
-                  className="text-red-400 hover:text-red-300"
+                  className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300"
                   title="删除分组"
                 >
                   🗑️
@@ -240,6 +365,13 @@ export default function GroupList({
                       e.stopPropagation()
                       onDeletePaper(paper.id!)
                     }}
+                    onContextMenu={(e) => handlePaperContextMenu(e, paper)}
+                    onDoubleClick={(e) => handlePaperDoubleClick(e, paper)}
+                    isEditing={editingPaperId === paper.id}
+                    editingTitle={editingPaperTitle}
+                    onTitleChange={setEditingPaperTitle}
+                    onFinishEdit={finishEditPaper}
+                    onCancelEdit={cancelEditPaper}
                   />
                 ))}
               </div>
@@ -262,6 +394,30 @@ export default function GroupList({
         groupId={knowledgeModalGroup?.id ?? 0}
         groupName={knowledgeModalGroup?.name || ''}
       />
+
+      {/* 论文右键菜单 */}
+      {paperContextMenu && (
+        <ContextMenu
+          x={paperContextMenu.x}
+          y={paperContextMenu.y}
+          items={getPaperContextMenuItems(
+            papers.find(p => p.id === paperContextMenu.paperId)!
+          )}
+          onClose={() => setPaperContextMenu(null)}
+        />
+      )}
+
+      {/* 分组右键菜单 */}
+      {groupContextMenu && (
+        <ContextMenu
+          x={groupContextMenu.x}
+          y={groupContextMenu.y}
+          items={getGroupContextMenuItems(
+            groups.find(g => g.id === groupContextMenu.groupId)!
+          )}
+          onClose={() => setGroupContextMenu(null)}
+        />
+      )}
     </div>
   )
 }
@@ -271,25 +427,59 @@ function PaperItem({
   paper,
   isSelected,
   onSelect,
-  onDelete
+  onDelete,
+  onContextMenu,
+  onDoubleClick,
+  isEditing,
+  editingTitle,
+  onTitleChange,
+  onFinishEdit,
+  onCancelEdit
 }: {
   paper: Paper
   isSelected: boolean
   onSelect: () => void
   onDelete: (e: React.MouseEvent) => void
+  onContextMenu: (e: React.MouseEvent) => void
+  onDoubleClick: (e: React.MouseEvent) => void
+  isEditing: boolean
+  editingTitle: string
+  onTitleChange: (value: string) => void
+  onFinishEdit: () => void
+  onCancelEdit: () => void
 }) {
   return (
     <div
       onClick={onSelect}
+      onContextMenu={onContextMenu}
       className={`p-3 rounded-lg cursor-pointer transition-colors group ${
         isSelected ? 'bg-blue-600' : 'hover:bg-gray-700'
       }`}
     >
       <div className="flex justify-between items-start">
         <div className="flex-1 min-w-0">
-          <h4 className="font-medium truncate mb-1 text-sm">
-            {paper.title}
-          </h4>
+          {isEditing ? (
+            <input
+              type="text"
+              value={editingTitle}
+              onChange={(e) => onTitleChange(e.target.value)}
+              onBlur={onFinishEdit}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onFinishEdit()
+                if (e.key === 'Escape') onCancelEdit()
+              }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full bg-gray-600 text-white px-2 py-1 rounded text-sm mb-1"
+              autoFocus
+            />
+          ) : (
+            <h4
+              className="font-medium truncate mb-1 text-sm"
+              onDoubleClick={onDoubleClick}
+            >
+              {paper.title}
+            </h4>
+          )}
           <p className="text-xs text-gray-400">
             {new Date(paper.createdAt).toLocaleDateString('zh-CN')}
           </p>
