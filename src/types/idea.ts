@@ -384,3 +384,58 @@ export const PRESET_SUMMARIZER: ModelConfig = {
     includeThoughts: false
   }
 }
+
+// ========== 跨会话评估类型 ==========
+
+/**
+ * 选中的 Idea（用于跨会话评估）
+ */
+export interface SelectedIdea {
+  sessionId: number             // 来源会话 ID
+  sessionTimestamp: string      // 会话时间戳
+  groupName: string             // 分组名称
+  ideaSlug: string              // Idea 标识 ('best_idea' | 模型 slug)
+  content: string               // Idea 内容（懒加载）
+  displayName: string           // 显示名称
+}
+
+/**
+ * 跨会话评估排名项
+ */
+export interface CrossSessionRankingItem {
+  rank: number
+  ideaId: string                // sessionId_ideaSlug 组合标识
+  score: number                 // 综合得分 (1-10)
+  summary: string               // 简要理由
+}
+
+/**
+ * 跨会话评估结果
+ */
+export interface CrossSessionEvaluationResult {
+  ranking: CrossSessionRankingItem[]
+  analysis: string              // 综合分析（Markdown 格式）
+  generatedAt: Date
+}
+
+/**
+ * 跨会话评估阶段
+ */
+export type CrossSessionEvaluationPhase =
+  | 'idle'          // 空闲
+  | 'selecting'     // 选择中
+  | 'loading'       // 加载内容
+  | 'evaluating'    // 评估中
+  | 'completed'     // 完成
+  | 'failed'        // 失败
+
+/**
+ * 跨会话评估状态
+ */
+export interface CrossSessionEvaluationState {
+  phase: CrossSessionEvaluationPhase
+  selectedIdeas: SelectedIdea[]
+  result: CrossSessionEvaluationResult | null
+  error: string | null
+  progress: string
+}

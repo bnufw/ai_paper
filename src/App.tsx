@@ -166,6 +166,7 @@ function App() {
                   onSendMessage={ideaChat.sendMessage}
                   onClearMessages={ideaChat.clearMessages}
                   onBack={handleNewPaper}
+                  onClearError={ideaChat.clearError}
                 />
               }
               defaultLeftWidth={50}

@@ -497,6 +497,13 @@ export function useChat(paperId: number) {
     ))
   }
 
+  /**
+   * 清除错误信息
+   */
+  const clearError = () => {
+    setError('')
+  }
+
   return {
     messages,
     conversations,
@@ -515,6 +522,7 @@ export function useChat(paperId: number) {
     deleteConversation,
     renameConversation,
     exportConversation,
-    markAsAddedToNote
+    markAsAddedToNote,
+    clearError
   }
 }

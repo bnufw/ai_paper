@@ -7,7 +7,9 @@ import type {
   WorkflowState,
   WorkflowPhase,
   ModelTaskState,
-  ModelStatus
+  ModelStatus,
+  ModelConfig,
+  LLMResponse
 } from '../../types/idea'
 import {
   getIdeaWorkflowConfig,
@@ -29,6 +31,83 @@ import {
 } from './workflowStorage'
 
 type StateListener = (state: WorkflowState) => void
+
+// 工作流级别的重试配置
+const WORKFLOW_MAX_RETRIES = 3
+
+/**
+ * 判断 LLM 响应是否需要重试
+ */
+function shouldRetryResponse(response: LLMResponse): boolean {
+  // 有错误
+  if (response.error) return true
+  // 内容为空
+  if (!response.content || response.content.trim().length === 0) return true
+  return false
+}
+
+/**
+ * 计算指数退避延迟时间（毫秒）
+ */
+function calculateBackoffDelay(attempt: number): number {
+  const base = 1000
+  const max = 8000
+  return Math.min(base * Math.pow(2, attempt) + Math.random() * 500, max)
+}
+
+/**
+ * 带重试的单模型调用
+ * 只重试失败/空值的响应，成功则立即返回
+ */
+async function callModelWithRetry(
+  config: ModelConfig,
+  prompt: string,
+  context: string,
+  signal: AbortSignal,
+  modelSlug: string,
+  maxRetries: number = WORKFLOW_MAX_RETRIES
+): Promise<LLMResponse> {
+  let lastResponse: LLMResponse = { content: '', error: '未执行' }
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (signal.aborted) {
+      return { content: '', error: '请求已取消' }
+    }
+
+    try {
+      const request = buildLLMRequest(config, prompt, context, signal)
+      const response = await callLLM(request)
+
+      // 成功：无错误且内容非空
+      if (!shouldRetryResponse(response)) {
+        return response
+      }
+
+      lastResponse = response
+
+      // 最后一次尝试不等待
+      if (attempt < maxRetries) {
+        const delayMs = calculateBackoffDelay(attempt)
+        console.log(`[Workflow] ${modelSlug} 响应无效（${response.error || '内容为空'}），将在 ${Math.round(delayMs)}ms 后进行第 ${attempt + 1} 次重试`)
+        await new Promise(r => setTimeout(r, delayMs))
+      }
+    } catch (e: any) {
+      lastResponse = { content: '', error: e.message }
+
+      if (attempt < maxRetries) {
+        const delayMs = calculateBackoffDelay(attempt)
+        console.log(`[Workflow] ${modelSlug} 调用异常（${e.message}），将在 ${Math.round(delayMs)}ms 后进行第 ${attempt + 1} 次重试`)
+        await new Promise(r => setTimeout(r, delayMs))
+      }
+    }
+  }
+
+  // 标记已重试
+  if (lastResponse.error) {
+    lastResponse.error = `${lastResponse.error}（已重试 ${maxRetries} 次）`
+  }
+  return lastResponse
+}
 
 /**
  * 创建初始状态
@@ -234,23 +313,17 @@ export class IdeaWorkflowEngine {
         enabledGenerators.map(async (gen) => {
           this.updateModelStatus('generators', gen.slug, 'running')
 
-          try {
-            const request = buildLLMRequest(gen, generatorPrompt, context, signal)
-            const response = await callLLM(request)
+          // 使用带重试的调用函数
+          const response = await callModelWithRetry(gen, generatorPrompt, context, signal, gen.slug)
 
-            if (signal.aborted) return
+          if (signal.aborted) return
 
-            if (isValidResponse(response)) {
-              ideas.set(gen.slug, response.content)
-              await saveIdea(sessionDir, gen.slug, response.content)
-              this.updateModelStatus('generators', gen.slug, 'completed', response.content)
-            } else {
-              this.updateModelStatus('generators', gen.slug, 'failed', undefined, response.error || '生成失败')
-            }
-          } catch (e) {
-            if (!signal.aborted) {
-              this.updateModelStatus('generators', gen.slug, 'failed', undefined, (e as Error).message)
-            }
+          if (isValidResponse(response)) {
+            ideas.set(gen.slug, response.content)
+            await saveIdea(sessionDir, gen.slug, response.content)
+            this.updateModelStatus('generators', gen.slug, 'completed', response.content)
+          } else {
+            this.updateModelStatus('generators', gen.slug, 'failed', undefined, response.error || '生成失败')
           }
 
           completedGenerators++
@@ -279,23 +352,17 @@ export class IdeaWorkflowEngine {
         enabledEvaluators.map(async (eval_) => {
           this.updateModelStatus('evaluators', eval_.slug, 'running')
 
-          try {
-            const request = buildLLMRequest(eval_, evaluatorPrompt, ideasForReview, signal)
-            const response = await callLLM(request)
+          // 使用带重试的调用函数
+          const response = await callModelWithRetry(eval_, evaluatorPrompt, ideasForReview, signal, eval_.slug)
 
-            if (signal.aborted) return
+          if (signal.aborted) return
 
-            if (isValidResponse(response)) {
-              reviews.set(eval_.slug, response.content)
-              await saveReview(sessionDir, eval_.slug, response.content)
-              this.updateModelStatus('evaluators', eval_.slug, 'completed', response.content)
-            } else {
-              this.updateModelStatus('evaluators', eval_.slug, 'failed', undefined, response.error || '评审失败')
-            }
-          } catch (e) {
-            if (!signal.aborted) {
-              this.updateModelStatus('evaluators', eval_.slug, 'failed', undefined, (e as Error).message)
-            }
+          if (isValidResponse(response)) {
+            reviews.set(eval_.slug, response.content)
+            await saveReview(sessionDir, eval_.slug, response.content)
+            this.updateModelStatus('evaluators', eval_.slug, 'completed', response.content)
+          } else {
+            this.updateModelStatus('evaluators', eval_.slug, 'failed', undefined, response.error || '评审失败')
           }
 
           completedEvaluators++
@@ -321,30 +388,29 @@ export class IdeaWorkflowEngine {
       const summarizerPrompt = getPrompt('summarizer', config.prompts.summarizer)
       const summarizerInput = formatForSummarizer(ideas, reviews)
 
-      try {
-        const request = buildLLMRequest(config.summarizer, summarizerPrompt, summarizerInput, signal)
-        const response = await callLLM(request)
+      // 使用带重试的调用函数
+      const response = await callModelWithRetry(
+        config.summarizer,
+        summarizerPrompt,
+        summarizerInput,
+        signal,
+        config.summarizer.slug
+      )
 
-        if (signal.aborted) return
+      if (signal.aborted) return
 
-        if (isValidResponse(response)) {
-          await saveBestIdea(sessionDir, response.content)
-          this.updateSummarizerStatus('completed', response.content)
-          this.state.bestIdea = response.content
+      if (isValidResponse(response)) {
+        await saveBestIdea(sessionDir, response.content)
+        this.updateSummarizerStatus('completed', response.content)
+        this.state.bestIdea = response.content
 
-          // 更新数据库会话状态
-          await updateIdeaSessionStatus(sessionId, 'completed', {
-            bestIdeaSlug: config.summarizer.slug
-          })
-        } else {
-          this.updateSummarizerStatus('failed', undefined, response.error || '筛选失败')
-          throw new Error(response.error || '筛选失败')
-        }
-      } catch (e) {
-        if (!signal.aborted) {
-          this.updateSummarizerStatus('failed', undefined, (e as Error).message)
-          throw e
-        }
+        // 更新数据库会话状态
+        await updateIdeaSessionStatus(sessionId, 'completed', {
+          bestIdeaSlug: config.summarizer.slug
+        })
+      } else {
+        this.updateSummarizerStatus('failed', undefined, response.error || '筛选失败')
+        throw new Error(response.error || '筛选失败')
       }
 
       this.updateProgress(totalTasks, totalTasks, '完成')

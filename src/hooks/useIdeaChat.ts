@@ -261,11 +261,17 @@ export function useIdeaChat(session: IdeaSession | null) {
     setState(prev => ({ ...prev, messages: [] }))
   }, [])
 
+  // 清除错误信息
+  const clearError = useCallback(() => {
+    setState(prev => ({ ...prev, error: '' }))
+  }, [])
+
   return {
     ...state,
     sendMessage,
     clearMessages,
     setCurrentIdeaSlug,
-    getCurrentIdeaContent
+    getCurrentIdeaContent,
+    clearError
   }
 }

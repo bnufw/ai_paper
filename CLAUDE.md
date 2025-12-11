@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-学术论文阅读器 - 纯前端应用，支持 PDF 上传、OCR 转换、AI 对话和笔记管理。
+学术论文阅读器 - 纯前端应用，支持 PDF 上传、OCR 转换、AI 对话、笔记管理和 AI Idea 工作流。
 
 ## 常用命令
 
@@ -19,7 +19,7 @@ npm run preview  # 预览生产构建
 - **框架**: React 19 + TypeScript + Vite 6
 - **样式**: Tailwind CSS 3
 - **存储**: Dexie.js (IndexedDB) + File System Access API
-- **AI**: Google Gemini SDK (@google/generative-ai)
+- **AI**: Google Gemini SDK (@google/genai), OpenAI SDK, 阿里云 Qwen
 - **渲染**: react-markdown + KaTeX + Mermaid + Highlight.js
 
 ## 核心架构
@@ -43,23 +43,38 @@ npm run preview  # 预览生产构建
    - `conversations`: 对话会话
    - `messages`: 消息记录 (支持图片、思考过程)
    - `settings`: API 密钥、Gemini 配置
+   - `ideaSessions`: Idea 工作流会话
 
 ### 关键模块
 
-- **`hooks/useChat.ts`**: 对话状态管理，支持论文引用 (`@[标题](paperId:123)`)、消息编辑、流式输出
-- **`services/ai/geminiClient.ts`**: Gemini API 封装，支持思考模式 (thinkingBudget/thinkingLevel)、联网搜索
-- **`services/pdf/mistralOCR.ts`**: PDF 转 Markdown，分批处理 (每 10 页一批)
-- **`services/note/noteService.ts`**: 笔记服务，AI 整理和生成功能
+**对话系统**
+- `hooks/useChat.ts`: 对话状态管理，支持论文引用 (`@[标题](paperId:123)`)、消息编辑、流式输出
+- `services/ai/geminiClient.ts`: Gemini API 封装，支持思考模式 (thinkingBudget/thinkingLevel)、联网搜索
+
+**AI 多模型服务层** (`services/ai/`)
+- `llmService.ts`: 统一 LLM 调用接口，根据 provider 分发
+- `providers/`: Gemini、OpenAI 兼容、阿里云 Qwen 各自实现
+- `cacheService.ts`: 论文内容远端缓存
+
+**Idea 工作流** (`services/idea/`, `hooks/useIdeaWorkflow.ts`)
+- 多模型并发生成、评审、筛选三阶段工作流
+- `types/idea.ts`: 模型配置 (ModelConfig)、工作流状态、预设模型列表
+- `workflowEngine.ts`: 工作流执行引擎
+- `defaultPrompts.ts`: 生成器/评审器/筛选器默认提示词
+
+**其他**
+- `services/pdf/mistralOCR.ts`: PDF 转 Markdown，分批处理 (每 10 页一批)
+- `services/note/noteService.ts`: 笔记服务，AI 整理和生成功能
 
 ### 组件结构
 
 ```
 App.tsx
-├── Sidebar (论文列表、分组管理)
+├── Sidebar (论文列表、分组管理、Idea 会话列表)
 ├── ResizablePanel
-│   ├── Left: PDFViewer / NotePanel (标签切换)
-│   └── Right: ChatPanel (对话面板)
-└── Modal: APIKeySettings / StorageSetupDialog
+│   ├── Left: PDFViewer / NotePanel / IdeaViewer (标签切换)
+│   └── Right: ChatPanel / IdeaChatPanel (对话面板)
+└── Modal: APIKeySettings / StorageSetupDialog / IdeaSettingsModal
 ```
 
 ## 开发注意事项
@@ -68,6 +83,7 @@ App.tsx
 - IndexedDB 数据库版本管理在 `db.ts` 中，修改表结构需升级版本号
 - 图片压缩使用 `utils/imageCompressor.ts`，JPEG 质量 0.8
 - 首次使用需用户授权本地目录访问
+- 新增预设模型时需同步更新 `types/idea.ts` 中的 `PRESET_GENERATORS` / `PRESET_EVALUATORS`
 - 无论何时，只要完成切实编码行为后，**必须立即使用codex review代码改动和对应需求完成程度**。
 - codex只能给出参考，你**必须有自己的思考，甚至需要对codex的回答提出置疑**。尽信书则不如无书，你与codex的最终使命都是达成统一、全面、精准的意见，所以你们必须不断争辩已找到通向真理的唯一途径。
 
@@ -89,3 +105,7 @@ Use `@/openspec/AGENTS.md` to learn:
 Keep this managed block so 'openspec update' can refresh the instructions.
 
 <!-- OPENSPEC:END -->
+
+
+# 开发环境
+项目运行在WSL2中。

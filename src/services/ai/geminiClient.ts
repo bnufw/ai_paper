@@ -1,6 +1,35 @@
 import { GoogleGenAI } from '@google/genai'
 import { getAPIKey, getGeminiSettings, type MessageImage } from '../storage/db'
 
+// 可重试的 HTTP 状态码
+const RETRYABLE_STATUS_CODES = [429, 500, 502, 503, 504]
+
+/**
+ * 判断是否为可重试错误
+ */
+function isRetryableError(error: any): boolean {
+  if (RETRYABLE_STATUS_CODES.includes(error.status)) return true
+  const msg = error.message || ''
+  return msg.includes('fetch') || msg.includes('network') || msg.includes('timeout') || msg.includes('ECONNRESET')
+}
+
+/**
+ * 计算指数退避延迟时间（毫秒）
+ * 基础延迟 1 秒，指数增长，加随机抖动避免惊群效应
+ */
+function calculateBackoffDelay(attempt: number): number {
+  const base = 1000
+  const max = 32000
+  return Math.min(base * Math.pow(2, attempt) + Math.random() * 1000, max)
+}
+
+/**
+ * 延迟执行
+ */
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
 /**
  * 使用Gemini API进行对话
  * @param paperContext 论文内容作为上下文（当 cachedContentName 有效时可为空）
@@ -11,6 +40,7 @@ import { getAPIKey, getGeminiSettings, type MessageImage } from '../storage/db'
  * @param onThought 思考过程回调
  * @param onGenerationStart 生成开始回调
  * @param cachedContentName 缓存内容名称（优先使用缓存）
+ * @param maxRetries 最大重试次数（默认5次）
  * @returns AI回复及元数据
  */
 export async function sendMessageToGemini(
@@ -21,7 +51,8 @@ export async function sendMessageToGemini(
   onStream?: (text: string) => void,
   onThought?: (thought: string) => void,
   onGenerationStart?: (startTime: Date) => void,
-  cachedContentName?: string | null
+  cachedContentName?: string | null,
+  maxRetries: number = 5
 ): Promise<{
   content: string
   thoughts?: string
@@ -131,7 +162,24 @@ export async function sendMessageToGemini(
   let groundingMetadata: any = undefined
   let webSearchQueries: string[] = []
 
-  try {
+  // 重试循环
+  let lastError: any
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    // 重试时重置状态
+    if (attempt > 0) {
+      thoughts = ''
+      thinkingEndTime = undefined
+      generationStartTime = undefined
+      generationEndTime = undefined
+      groundingMetadata = undefined
+      webSearchQueries = []
+      // 重置流式输出
+      if (onStream) onStream('')
+      if (onThought) onThought('')
+      console.log(`[Gemini] 第 ${attempt} 次重试...`)
+    }
+
+    try {
     // 流式输出
     if (settings.streaming && onStream) {
       // 标记生成开始
@@ -266,12 +314,22 @@ export async function sendMessageToGemini(
     )
 
     if (isCacheError) {
-      // 缓存失效错误，抛出特殊错误让调用方处理
+      // 缓存失效错误，抛出特殊错误让调用方处理（不重试）
       const cacheError = new Error(`缓存失效: ${errorMessage}`)
       ;(cacheError as any).isCacheError = true
       throw cacheError
     }
 
+    // 检查是否可重试
+    if (isRetryableError(error) && attempt < maxRetries) {
+      lastError = error
+      const delayMs = calculateBackoffDelay(attempt)
+      console.log(`[Gemini] 请求失败 (${error.status || 'network'}), 将在 ${Math.round(delayMs)}ms 后重试`)
+      await delay(delayMs)
+      continue  // 继续下一次重试
+    }
+
+    // 不可重试或已达最大重试次数
     if (error.status) {
       throw new Error(`API请求失败 (${error.status}): ${error.statusText || error.message || '未知错误'}`)
     } else if (errorMessage.includes('fetch')) {
@@ -279,4 +337,8 @@ export async function sendMessageToGemini(
     }
     throw error
   }
+  } // for 循环结束
+
+  // 所有重试都失败
+  throw lastError || new Error('请求失败，已达最大重试次数')
 }

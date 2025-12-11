@@ -23,6 +23,7 @@ interface IdeaChatPanelProps {
   onSendMessage: (content: string) => void
   onClearMessages: () => void
   onBack: () => void
+  onClearError?: () => void
 }
 
 /**
@@ -39,7 +40,8 @@ export default function IdeaChatPanel({
   streamingStartTime,
   onSendMessage,
   onClearMessages,
-  onBack
+  onBack,
+  onClearError
 }: IdeaChatPanelProps) {
 
   const [inputValue, setInputValue] = useState('')
@@ -230,8 +232,19 @@ export default function IdeaChatPanel({
 
         {/* 错误提示 */}
         {error && (
-          <div className="mx-4 mb-2 p-3 bg-red-50 border border-red-200 rounded-md">
-            <p className="text-sm text-red-800">{error}</p>
+          <div className="mx-4 mb-2 p-3 bg-red-50 border border-red-200 rounded-md flex items-start justify-between">
+            <p className="text-sm text-red-800 flex-1">{error}</p>
+            {onClearError && (
+              <button
+                onClick={onClearError}
+                className="ml-2 text-red-600 hover:text-red-800 transition-colors flex-shrink-0"
+                title="关闭"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
           </div>
         )}
 
