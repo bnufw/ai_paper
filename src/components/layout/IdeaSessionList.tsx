@@ -5,6 +5,7 @@ interface IdeaSessionListProps {
   currentSessionId: number | null
   onSelectSession: (session: IdeaSession) => void
   collapsed: boolean
+  refreshTrigger?: number
 }
 
 /**
@@ -13,7 +14,8 @@ interface IdeaSessionListProps {
 export default function IdeaSessionList({
   currentSessionId,
   onSelectSession,
-  collapsed
+  collapsed,
+  refreshTrigger
 }: IdeaSessionListProps) {
   const [sessions, setSessions] = useState<IdeaSession[]>([])
   const [expanded, setExpanded] = useState(false)
@@ -34,7 +36,7 @@ export default function IdeaSessionList({
       }
     }
     loadSessions()
-  }, [])
+  }, [refreshTrigger])
 
   // 删除会话
   const handleDelete = async (sessionId: number, e: React.MouseEvent) => {

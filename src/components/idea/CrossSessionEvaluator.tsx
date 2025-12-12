@@ -8,7 +8,7 @@ import remarkMath from 'remark-math'
 import remarkGfm from 'remark-gfm'
 import rehypeKatex from 'rehype-katex'
 import { useCrossSessionEvaluation } from '../../hooks/useCrossSessionEvaluation'
-import type { IdeaSession, SelectedIdea } from '../../types/idea'
+import type { IdeaSession } from '../../types/idea'
 
 interface Props {
   isOpen: boolean

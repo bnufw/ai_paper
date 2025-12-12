@@ -5,7 +5,6 @@
 import { useState, useCallback, useEffect } from 'react'
 import type {
   SelectedIdea,
-  CrossSessionEvaluationResult,
   CrossSessionEvaluationState,
   CrossSessionEvaluationPhase,
   IdeaSession

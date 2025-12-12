@@ -4,15 +4,17 @@ import {
   deletePaper,
   getAllGroups,
   createGroup,
-  renameGroup,
+  renameGroupWithIdeaSessions,
   deleteGroup,
   updatePaperTitle,
+  movePaperToGroup,
   type Paper,
   type PaperGroup,
   type IdeaSession
 } from '../../services/storage/db'
 import { deletePaperFromLocal } from '../../services/storage/paperStorage'
 import { cleanupPaperCache } from '../../services/ai/cacheService'
+import { checkDirectoryPermission, getDirectoryHandle, renameDirectory } from '../../services/storage/fileSystem'
 import GroupList from './GroupList'
 import IdeaSessionList from './IdeaSessionList'
 import { IdeaWorkflowRunner, IdeaSettingsModal, CrossSessionEvaluator } from '../idea'
@@ -41,6 +43,7 @@ export default function Sidebar({
   const [papers, setPapers] = useState<Paper[]>([])
   const [groups, setGroups] = useState<PaperGroup[]>([])
   const [loading, setLoading] = useState(true)
+  const [dataVersion, setDataVersion] = useState(0)
 
   // Idea 工作流相关状态
   const [ideaWorkflowOpen, setIdeaWorkflowOpen] = useState(false)
@@ -58,6 +61,7 @@ export default function Sidebar({
     setPapers(allPapers)
     setGroups(allGroups)
     setLoading(false)
+    setDataVersion(v => v + 1)
   }
 
   useEffect(() => {
@@ -106,13 +110,66 @@ export default function Sidebar({
 
   // 重命名分组
   const handleRenameGroup = async (groupId: number, newName: string) => {
-    await renameGroup(groupId, newName)
-    await loadData()
+    const trimmedNewName = newName.trim()
+    if (!trimmedNewName) return
+
+    try {
+      // 先尝试重命名本地文件系统中的分组目录（若已配置）
+      const rootHandle = await getDirectoryHandle()
+      if (rootHandle) {
+        const hasPermission = await checkDirectoryPermission(rootHandle)
+        if (hasPermission) {
+          const oldGroup = groups.find(g => g.id === groupId)
+          const oldName = oldGroup?.name
+          if (oldName && oldName !== trimmedNewName) {
+            // 仅当旧目录存在时才执行重命名
+            let oldExists = true
+            try {
+              await rootHandle.getDirectoryHandle(oldName)
+            } catch {
+              oldExists = false
+            }
+
+            if (oldExists) {
+              let newExists = false
+              try {
+                await rootHandle.getDirectoryHandle(trimmedNewName)
+                newExists = true
+              } catch {
+                newExists = false
+              }
+
+              if (newExists) {
+                const ok = confirm(`目标分组目录 "${trimmedNewName}" 已存在，是否合并目录内容？\n（合并会覆盖同名文件）`)
+                if (!ok) {
+                  return
+                }
+              }
+
+              await renameDirectory(rootHandle, oldName, trimmedNewName)
+            }
+          }
+        }
+      }
+
+      // 同步更新数据库中的分组名与 Idea 会话冗余字段
+      await renameGroupWithIdeaSessions(groupId, trimmedNewName)
+      await loadData()
+    } catch (err) {
+      console.error('重命名分组失败:', err)
+      alert('重命名分组失败，请重试')
+    }
   }
 
   // 重命名论文
   const handleRenamePaper = async (paperId: number, newTitle: string) => {
     await updatePaperTitle(paperId, newTitle)
+    await loadData()
+  }
+
+  // 移动论文到分组
+  const handleMovePaperToGroup = async (paperId: number, groupId?: number) => {
+    await movePaperToGroup(paperId, groupId)
     await loadData()
   }
 
@@ -197,6 +254,7 @@ export default function Sidebar({
             onSelectPaper={onSelectPaper}
             onDeletePaper={handleDelete}
             onRenamePaper={handleRenamePaper}
+            onMovePaperToGroup={handleMovePaperToGroup}
             onCreateGroup={handleCreateGroup}
             onRenameGroup={handleRenameGroup}
             onDeleteGroup={handleDeleteGroup}
@@ -212,6 +270,7 @@ export default function Sidebar({
             currentSessionId={currentIdeaSessionId}
             onSelectSession={onSelectIdeaSession}
             collapsed={collapsed}
+            refreshTrigger={dataVersion}
           />
           {/* 跨会话综合评估入口 */}
           <div className="px-4 pb-2">

@@ -3,6 +3,7 @@ import { type Paper, type PaperGroup, updatePaperTitle } from '../../services/st
 import GroupNoteModal from '../note/GroupNoteModal'
 import DomainKnowledgeModal from '../knowledge/DomainKnowledgeModal'
 import ContextMenu, { type ContextMenuItem } from '../common/ContextMenu'
+import MovePaperModal from './MovePaperModal'
 
 interface GroupListProps {
   groups: PaperGroup[]
@@ -11,6 +12,7 @@ interface GroupListProps {
   onSelectPaper: (paperId: number) => void
   onDeletePaper: (paperId: number) => void
   onRenamePaper?: (paperId: number, newTitle: string) => Promise<void>
+  onMovePaperToGroup?: (paperId: number, groupId?: number) => Promise<void>
   onCreateGroup: () => void
   onRenameGroup: (groupId: number, newName: string) => void
   onDeleteGroup: (groupId: number) => void
@@ -24,6 +26,7 @@ export default function GroupList({
   onSelectPaper,
   onDeletePaper,
   onRenamePaper,
+  onMovePaperToGroup,
   onCreateGroup,
   onRenameGroup,
   onDeleteGroup,
@@ -39,6 +42,9 @@ export default function GroupList({
   const [paperContextMenu, setPaperContextMenu] = useState<{ x: number; y: number; paperId: number } | null>(null)
   const [editingPaperId, setEditingPaperId] = useState<number | null>(null)
   const [editingPaperTitle, setEditingPaperTitle] = useState('')
+  const [movePaperId, setMovePaperId] = useState<number | null>(null)
+  const [draggingPaperId, setDraggingPaperId] = useState<number | null>(null)
+  const [dragOverGroupId, setDragOverGroupId] = useState<number | null>(null)
 
   // 分组右键菜单状态
   const [groupContextMenu, setGroupContextMenu] = useState<{ x: number; y: number; groupId: number } | null>(null)
@@ -63,7 +69,7 @@ export default function GroupList({
 
   // 完成重命名
   const finishRename = () => {
-    if (editingGroupId && editingName.trim()) {
+    if (editingGroupId !== null && editingName.trim()) {
       onRenameGroup(editingGroupId, editingName.trim())
     }
     setEditingGroupId(null)
@@ -120,19 +126,38 @@ export default function GroupList({
     startEditPaper(paper)
   }
 
-  const getPaperContextMenuItems = (paper: Paper): ContextMenuItem[] => [
-    {
-      label: '重命名',
-      icon: '✏️',
-      onClick: () => startEditPaper(paper)
-    },
-    {
-      label: '删除',
-      icon: '🗑️',
-      onClick: () => onDeletePaper(paper.id!),
-      danger: true
+  const getPaperContextMenuItems = (paper: Paper): ContextMenuItem[] => {
+    const items: ContextMenuItem[] = [
+      {
+        label: '重命名',
+        icon: '✏️',
+        onClick: () => startEditPaper(paper)
+      }
+    ]
+
+    if (onMovePaperToGroup) {
+      items.push(
+        { divider: true },
+        {
+          label: '移动到分组…',
+          icon: '📁',
+          onClick: () => setMovePaperId(paper.id!)
+        }
+      )
     }
-  ]
+
+    items.push(
+      { divider: true },
+      {
+        label: '删除',
+        icon: '🗑️',
+        onClick: () => onDeletePaper(paper.id!),
+        danger: true
+      }
+    )
+
+    return items
+  }
 
   // 分组右键菜单相关函数
   const handleGroupContextMenu = (e: React.MouseEvent, group: PaperGroup) => {
@@ -205,7 +230,27 @@ export default function GroupList({
 
       {/* 未分类 */}
       <div className="mb-2">
-        <div className="px-3 py-2 flex items-center justify-between group">
+        <div
+          className={`px-3 py-2 flex items-center justify-between group ${
+            dragOverGroupId === -1 ? 'bg-gray-700' : ''
+          }`}
+          onDragOver={(e) => {
+            if (!onMovePaperToGroup) return
+            e.preventDefault()
+            setDragOverGroupId(-1)
+          }}
+          onDragLeave={() => setDragOverGroupId(null)}
+          onDrop={async (e) => {
+            if (!onMovePaperToGroup) return
+            e.preventDefault()
+            const paperId = Number(e.dataTransfer.getData('paperId'))
+            if (paperId) {
+              await onMovePaperToGroup(paperId, undefined)
+            }
+            setDragOverGroupId(null)
+            setDraggingPaperId(null)
+          }}
+        >
           <div className="flex items-center">
             {uncategorizedPapers.length > 0 && (
               <span
@@ -251,6 +296,9 @@ export default function GroupList({
                 onTitleChange={setEditingPaperTitle}
                 onFinishEdit={finishEditPaper}
                 onCancelEdit={cancelEditPaper}
+                onDragStart={() => setDraggingPaperId(paper.id!)}
+                onDragEnd={() => setDraggingPaperId(null)}
+                isDragging={draggingPaperId === paper.id}
               />
             ))}
           </div>
@@ -265,8 +313,25 @@ export default function GroupList({
         return (
           <div key={group.id} className="mb-2">
             <div
-              className="px-3 py-2 flex items-center justify-between group hover:bg-gray-700"
-              onContextMenu={(e) => handleGroupContextMenu(e, group)}
+              className={`px-3 py-2 flex items-center justify-between group hover:bg-gray-700 ${
+                dragOverGroupId === group.id ? 'bg-gray-700' : ''
+              }`}
+              onDragOver={(e) => {
+                if (!onMovePaperToGroup) return
+                e.preventDefault()
+                setDragOverGroupId(group.id!)
+              }}
+              onDragLeave={() => setDragOverGroupId(null)}
+              onDrop={async (e) => {
+                if (!onMovePaperToGroup) return
+                e.preventDefault()
+                const paperId = Number(e.dataTransfer.getData('paperId'))
+                if (paperId) {
+                  await onMovePaperToGroup(paperId, group.id)
+                }
+                setDragOverGroupId(null)
+                setDraggingPaperId(null)
+              }}
             >
               <div className="flex items-center flex-1 min-w-0">
                 <span
@@ -294,7 +359,15 @@ export default function GroupList({
                     autoFocus
                   />
                 ) : (
-                  <span className="text-sm font-medium truncate">
+                  <span
+                    className="text-sm font-medium truncate cursor-pointer hover:text-blue-400"
+                    onDoubleClick={(e) => {
+                      e.stopPropagation()
+                      setEditingGroupId(group.id!)
+                      setEditingName(group.name)
+                    }}
+                    onContextMenu={(e) => handleGroupContextMenu(e, group)}
+                  >
                     {group.name}
                   </span>
                 )}
@@ -372,6 +445,9 @@ export default function GroupList({
                     onTitleChange={setEditingPaperTitle}
                     onFinishEdit={finishEditPaper}
                     onCancelEdit={cancelEditPaper}
+                    onDragStart={() => setDraggingPaperId(paper.id!)}
+                    onDragEnd={() => setDraggingPaperId(null)}
+                    isDragging={draggingPaperId === paper.id}
                   />
                 ))}
               </div>
@@ -418,6 +494,17 @@ export default function GroupList({
           onClose={() => setGroupContextMenu(null)}
         />
       )}
+
+      {/* 移动论文弹窗 */}
+      {onMovePaperToGroup && (
+        <MovePaperModal
+          isOpen={movePaperId !== null}
+          onClose={() => setMovePaperId(null)}
+          paper={papers.find(p => p.id === movePaperId) || null}
+          groups={groups}
+          onMove={onMovePaperToGroup}
+        />
+      )}
     </div>
   )
 }
@@ -434,7 +521,10 @@ function PaperItem({
   editingTitle,
   onTitleChange,
   onFinishEdit,
-  onCancelEdit
+  onCancelEdit,
+  onDragStart,
+  onDragEnd,
+  isDragging
 }: {
   paper: Paper
   isSelected: boolean
@@ -447,13 +537,28 @@ function PaperItem({
   onTitleChange: (value: string) => void
   onFinishEdit: () => void
   onCancelEdit: () => void
+  onDragStart: () => void
+  onDragEnd: () => void
+  isDragging: boolean
 }) {
   return (
     <div
       onClick={onSelect}
       onContextMenu={onContextMenu}
+      draggable
+      onDragStart={(e) => {
+        e.stopPropagation()
+        e.dataTransfer.setData('paperId', String(paper.id))
+        e.dataTransfer.effectAllowed = 'move'
+        onDragStart()
+      }}
+      onDragEnd={onDragEnd}
       className={`p-3 rounded-lg cursor-pointer transition-colors group ${
-        isSelected ? 'bg-blue-600' : 'hover:bg-gray-700'
+        isDragging
+          ? 'bg-gray-700 opacity-70'
+          : isSelected
+          ? 'bg-blue-600'
+          : 'hover:bg-gray-700'
       }`}
     >
       <div className="flex justify-between items-start">

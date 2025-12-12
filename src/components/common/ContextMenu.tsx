@@ -1,14 +1,18 @@
 import { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 
-export interface ContextMenuItem {
-  label: string
-  icon?: string
-  onClick: () => void
-  disabled?: boolean
-  danger?: boolean  // 危险操作显示红色
-  divider?: boolean // 分隔线
-}
+export type ContextMenuItem =
+  | {
+      divider: true
+    }
+  | {
+      label: string
+      icon?: string
+      onClick: () => void
+      disabled?: boolean
+      danger?: boolean  // 危险操作显示红色
+      divider?: false
+    }
 
 interface ContextMenuProps {
   x: number

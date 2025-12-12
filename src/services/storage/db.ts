@@ -410,6 +410,45 @@ export async function renameGroup(id: number, newName: string): Promise<void> {
 }
 
 /**
+ * 重命名分组，并同步更新相关 Idea 会话冗余字段
+ * - 更新 groups.name
+ * - 更新 ideaSessions.groupName
+ * - 若 ideaSessions.localPath 以旧分组名开头，则替换为新分组名
+ */
+export async function renameGroupWithIdeaSessions(
+  id: number,
+  newName: string
+): Promise<{ oldName: string; newName: string }> {
+  const group = await db.groups.get(id)
+  const oldName = group?.name || ''
+  const trimmedNewName = newName.trim()
+
+  await db.groups.update(id, { name: trimmedNewName })
+
+  if (oldName && oldName !== trimmedNewName) {
+    await db.ideaSessions
+      .where('groupId')
+      .equals(id)
+      .modify(session => {
+        session.groupName = trimmedNewName
+        if (session.localPath?.startsWith(`${oldName}/`)) {
+          session.localPath = session.localPath.replace(
+            new RegExp(`^${oldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/`),
+            `${trimmedNewName}/`
+          )
+        }
+      })
+  } else {
+    await db.ideaSessions
+      .where('groupId')
+      .equals(id)
+      .modify({ groupName: trimmedNewName })
+  }
+
+  return { oldName, newName: trimmedNewName }
+}
+
+/**
  * 删除分组（论文移至未分类）
  */
 export async function deleteGroup(id: number): Promise<void> {
