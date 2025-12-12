@@ -10,7 +10,7 @@ import {
   readTextFile,
   checkDirectoryPermission
 } from '../storage/fileSystem'
-import { db } from '../storage/db'
+import { db, exportIdeaChat } from '../storage/db'
 
 /**
  * 生成时间戳字符串 (YYYY-MM-DD-HH-MM-SS)
@@ -335,4 +335,18 @@ async function loadDomainKnowledge(groupName: string): Promise<string | null> {
   } catch {
     return null
   }
+}
+
+/**
+ * 导出 Idea 对话到会话目录
+ * 保存为 chat_history.md
+ */
+export async function exportIdeaChatToFile(sessionId: number, localPath: string): Promise<void> {
+  const sessionDir = await getSessionDirectory(localPath)
+  if (!sessionDir) {
+    throw new Error('无法访问会话目录')
+  }
+
+  const content = await exportIdeaChat(sessionId)
+  await writeTextFile(sessionDir, 'chat_history.md', content)
 }

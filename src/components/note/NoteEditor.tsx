@@ -43,9 +43,9 @@ export default function NoteEditor({ content, onChange, onSave, mode }: NoteEdit
   }, [content, onSave])
 
   return (
-    <div className="flex flex-col h-full bg-white">
+    <div className="flex flex-col h-full bg-white min-w-0">
       {/* 内容区域 */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden min-w-0">
         {mode === 'edit' ? (
           <textarea
             value={content}
@@ -54,8 +54,8 @@ export default function NoteEditor({ content, onChange, onSave, mode }: NoteEdit
             placeholder="在此编写笔记..."
           />
         ) : (
-          <div className="h-full overflow-auto">
-            <div className="max-w-4xl mx-auto p-8 prose prose-lg max-w-none">
+          <div className="h-full overflow-auto min-w-0">
+            <div className="max-w-4xl mx-auto p-8 prose prose-lg break-words [&_pre]:overflow-x-auto [&_table]:overflow-x-auto">
               <ReactMarkdown
                 remarkPlugins={[remarkMath, remarkGfm]}
                 rehypePlugins={[rehypeKatex, rehypeHighlight]}

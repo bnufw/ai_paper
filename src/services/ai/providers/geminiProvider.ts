@@ -5,6 +5,7 @@
 
 import { GoogleGenAI } from '@google/genai'
 import { getAPIKey } from '../../storage/db'
+import { withRetry } from '../retryUtils'
 import type { LLMRequest, LLMResponse } from '../../../types/idea'
 
 // 可重试的 HTTP 状态码
@@ -89,12 +90,14 @@ export async function callGemini(request: LLMRequest): Promise<LLMResponse> {
         return { content: '', error: '请求已取消' }
       }
 
-      // 调用 API
-      const response = await ai.models.generateContent({
-        model: request.model,
-        contents: request.systemPrompt + '\n\n' + request.userMessage,
-        config
-      })
+      // 调用 API（带重试机制）
+      const response = await withRetry(
+        () => ai.models.generateContent({
+          model: request.model,
+          contents: request.systemPrompt + '\n\n' + request.userMessage,
+          config
+        })
+      )
 
       // 检查是否被取消
       if (request.signal?.aborted) {

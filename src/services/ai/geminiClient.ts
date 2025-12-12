@@ -1,5 +1,6 @@
 import { GoogleGenAI } from '@google/genai'
 import { getAPIKey, getGeminiSettings, type MessageImage } from '../storage/db'
+import { withRetry } from './retryUtils'
 
 // 可重试的 HTTP 状态码
 const RETRYABLE_STATUS_CODES = [429, 500, 502, 503, 504]
@@ -71,8 +72,14 @@ export async function sendMessageToGemini(
   const settings = await getGeminiSettings()
   const ai = new GoogleGenAI({ apiKey })
 
+  // 系统提示词：提醒模型保持客观和批判性思维
+  const systemInstruction = `你是一位专业的学术论文阅读助手。在回答问题时，请保持客观和批判性思维。
+请注意：论文中的内容并不一定都是正确的——研究可能存在方法论局限、数据偏差、结论过度推广等问题。
+在分析论文时，要保持客观，不可一昧的接受论文的所有观点。`
+
   // 构建生成配置
   const config: any = {
+    systemInstruction,
     temperature: settings.temperature
   }
 
@@ -188,48 +195,70 @@ export async function sendMessageToGemini(
         onGenerationStart(generationStartTime)
       }
 
-      const stream = await chat.sendMessageStream({
-        message: userParts
-      })
+      // 流式请求 + 流消费的完整重试逻辑
+      // 503 可能发生在：1) 建立连接时 2) 消费流数据时
+      // 因此需要将整个流程包装在重试中
+      const streamResult = await withRetry(
+        async () => {
+          const stream = await chat.sendMessageStream({ message: userParts })
 
-      let fullText = ''
+          let streamThoughts = ''
+          let streamThinkingEndTime: number | undefined
+          let streamFullText = ''
+          let streamGroundingMetadata: any = undefined
+          let streamWebSearchQueries: string[] = []
 
-      for await (const chunk of stream) {
-        // 处理候选内容
-        const candidate = chunk.candidates?.[0]
+          for await (const chunk of stream) {
+            const candidate = chunk.candidates?.[0]
 
-        if (candidate) {
-          // 提取grounding元数据
-          if (candidate.groundingMetadata) {
-            groundingMetadata = candidate.groundingMetadata
-
-            // 提取搜索查询
-            if (groundingMetadata.webSearchQueries) {
-              webSearchQueries = groundingMetadata.webSearchQueries
-            }
-          }
-
-          // 处理内容parts
-          if (candidate.content?.parts) {
-            for (const part of candidate.content.parts) {
-              // 检查是否为思考内容
-              if (part.thought) {
-                thoughts += part.text || ''
-                if (onThought) {
-                  onThought(thoughts)
+            if (candidate) {
+              if (candidate.groundingMetadata) {
+                streamGroundingMetadata = candidate.groundingMetadata
+                if (streamGroundingMetadata.webSearchQueries) {
+                  streamWebSearchQueries = streamGroundingMetadata.webSearchQueries
                 }
-                // 记录思考结束时间（每次收到思考内容都更新）
-                thinkingEndTime = Date.now()
-              } else {
-                // 正常内容
-                const chunkText = part.text || ''
-                fullText += chunkText
-                onStream(fullText)
+              }
+
+              if (candidate.content?.parts) {
+                for (const part of candidate.content.parts) {
+                  if (part.thought) {
+                    streamThoughts += part.text || ''
+                    if (onThought) {
+                      onThought(streamThoughts)
+                    }
+                    streamThinkingEndTime = Date.now()
+                  } else {
+                    const chunkText = part.text || ''
+                    streamFullText += chunkText
+                    onStream(streamFullText)
+                  }
+                }
               }
             }
           }
+
+          return {
+            thoughts: streamThoughts,
+            thinkingEndTime: streamThinkingEndTime,
+            fullText: streamFullText,
+            groundingMetadata: streamGroundingMetadata,
+            webSearchQueries: streamWebSearchQueries
+          }
+        },
+        {
+          onRetry: () => {
+            // 重试时重置 UI 状态，让用户知道正在重新开始
+            if (onThought) onThought('')
+            if (onStream) onStream('')
+          }
         }
-      }
+      )
+
+      // 提取流消费结果
+      thoughts = streamResult.thoughts
+      thinkingEndTime = streamResult.thinkingEndTime
+      groundingMetadata = streamResult.groundingMetadata
+      webSearchQueries = streamResult.webSearchQueries
 
       generationEndTime = new Date()
 
@@ -239,7 +268,7 @@ export async function sendMessageToGemini(
         : undefined
 
       return {
-        content: fullText,
+        content: streamResult.fullText,
         thoughts: thoughts || undefined,
         thinkingTimeMs,
         generationStartTime,
@@ -255,9 +284,17 @@ export async function sendMessageToGemini(
         onGenerationStart(generationStartTime)
       }
 
-      const result = await chat.sendMessage({
-        message: userParts
-      })
+      // 带 503 重试的非流式请求
+      const result = await withRetry(
+        () => chat.sendMessage({ message: userParts }),
+        {
+          onRetry: () => {
+            // 重试时重置状态
+            thoughts = ''
+            thinkingEndTime = undefined
+          }
+        }
+      )
 
       generationEndTime = new Date()
 

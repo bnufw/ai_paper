@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { db, type Message, type Conversation, type MessageImage, deleteConversation as dbDeleteConversation, renameConversation as dbRenameConversation, exportConversation as dbExportConversation, getPaperMarkdown, deleteMessagesAfter, getGeminiSettings } from '../services/storage/db'
+import { db, type Message, type Conversation, type MessageImage, deleteConversation as dbDeleteConversation, renameConversation as dbRenameConversation, exportConversation as dbExportConversation, clearConversationMessages as dbClearConversationMessages, getPaperMarkdown, deleteMessagesAfter, getGeminiSettings } from '../services/storage/db'
 import { sendMessageToGemini } from '../services/ai/geminiClient'
 import { loadDomainKnowledge } from '../services/knowledge/domainKnowledgeService'
 import { getOrCreatePaperCache, refreshCacheTTL, invalidateCache } from '../services/ai/cacheService'
@@ -34,6 +34,7 @@ export function useChat(paperId: number) {
   const [messages, setMessages] = useState<Message[]>([])
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [currentConversationId, setCurrentConversationId] = useState<number | null>(null)
+  const [lastClearAt, setLastClearAt] = useState<Date | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [streamingText, setStreamingText] = useState('')
@@ -111,10 +112,15 @@ export function useChat(paperId: number) {
   useEffect(() => {
     if (!currentConversationId) {
       setMessages([])
+      setLastClearAt(null)
       return
     }
 
     async function loadMessages() {
+      // 加载对话信息（获取 lastClearAt）
+      const conv = await db.conversations.get(currentConversationId!)
+      setLastClearAt(conv?.lastClearAt || null)
+
       const msgs = await db.messages
         .where('conversationId')
         .equals(currentConversationId!)
@@ -299,10 +305,16 @@ export function useChat(paperId: number) {
         .sortBy('timestamp')
 
       let messagesForHistory = existingMessages
+
+      // 过滤 lastClearAt 之后的消息（上下文清除功能）
+      if (lastClearAt) {
+        messagesForHistory = messagesForHistory.filter(m => m.timestamp > lastClearAt)
+      }
+
       if (editingId) {
-        const editIndex = existingMessages.findIndex(m => m.id === editingId)
+        const editIndex = messagesForHistory.findIndex(m => m.id === editingId)
         if (editIndex !== -1) {
-          messagesForHistory = existingMessages.slice(0, editIndex)
+          messagesForHistory = messagesForHistory.slice(0, editIndex)
         }
       }
 
@@ -498,6 +510,15 @@ export function useChat(paperId: number) {
   }
 
   /**
+   * 清空对话上下文（保留消息显示，但AI不再获取之前的历史）
+   */
+  const clearMessages = async () => {
+    if (!currentConversationId) return
+    const clearTime = await dbClearConversationMessages(currentConversationId)
+    setLastClearAt(clearTime)
+  }
+
+  /**
    * 清除错误信息
    */
   const clearError = () => {
@@ -508,6 +529,7 @@ export function useChat(paperId: number) {
     messages,
     conversations,
     currentConversationId,
+    lastClearAt,
     loading,
     error,
     streamingText,
@@ -522,6 +544,7 @@ export function useChat(paperId: number) {
     deleteConversation,
     renameConversation,
     exportConversation,
+    clearMessages,
     markAsAddedToNote,
     clearError
   }
