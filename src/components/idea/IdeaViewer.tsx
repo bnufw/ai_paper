@@ -3,6 +3,7 @@ import remarkMath from 'remark-math'
 import remarkGfm from 'remark-gfm'
 import rehypeKatex from 'rehype-katex'
 import rehypeHighlight from 'rehype-highlight'
+import type { IdeaEntry } from '../../services/idea/workflowStorage'
 
 import 'katex/dist/katex.min.css'
 import 'highlight.js/styles/github-dark.css'
@@ -10,7 +11,7 @@ import 'highlight.js/styles/github-dark.css'
 interface IdeaViewerProps {
   currentIdeaSlug: string
   bestIdea: string | null
-  allIdeas: Map<string, string>
+  allIdeas: IdeaEntry[]
   onIdeaChange: (slug: string) => void
 }
 
@@ -24,19 +25,30 @@ export default function IdeaViewer({
   allIdeas,
   onIdeaChange
 }: IdeaViewerProps) {
-  // 构建选项列表
+  // 构建选项列表：显示 "Idea 1 (模型名)"
   const options = [
     { value: 'best_idea', label: '🏆 Best Idea' },
-    ...Array.from(allIdeas.keys()).map(slug => ({
-      value: slug,
-      label: `💡 ${slug}`
+    ...allIdeas.map(idea => ({
+      value: `idea_${idea.index}`,
+      label: `💡 Idea ${idea.index} (${idea.slug})`
     }))
   ]
 
   // 获取当前内容
-  const currentContent = currentIdeaSlug === 'best_idea'
-    ? bestIdea
-    : allIdeas.get(currentIdeaSlug)
+  const getCurrentContent = () => {
+    if (currentIdeaSlug === 'best_idea') {
+      return bestIdea
+    }
+    const match = currentIdeaSlug.match(/^idea_(\d+)$/)
+    if (match) {
+      const index = parseInt(match[1], 10)
+      const idea = allIdeas.find(i => i.index === index)
+      return idea?.content || null
+    }
+    return null
+  }
+
+  const currentContent = getCurrentContent()
 
   return (
     <div className="h-full flex flex-col bg-white">
@@ -56,7 +68,7 @@ export default function IdeaViewer({
             ))}
           </select>
           <span className="text-xs text-gray-400">
-            共 {allIdeas.size} 个候选
+            共 {allIdeas.length} 个候选
           </span>
         </div>
       </div>

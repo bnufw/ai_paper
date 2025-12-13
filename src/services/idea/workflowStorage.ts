@@ -67,15 +67,16 @@ export async function createWorkflowDirectory(
 }
 
 /**
- * 保存生成的 Idea
+ * 保存生成的 Idea（文件名包含索引和模型名）
  */
 export async function saveIdea(
   sessionDir: FileSystemDirectoryHandle,
+  index: number,
   slug: string,
   content: string
 ): Promise<void> {
   const ideasDir = await sessionDir.getDirectoryHandle('ideas')
-  const filename = `idea_${sanitizeFilename(slug)}.md`
+  const filename = `idea_${index}_${sanitizeFilename(slug)}.md`
   await writeTextFile(ideasDir, filename, content)
 }
 
@@ -103,12 +104,23 @@ export async function saveBestIdea(
 }
 
 /**
+ * Idea 条目，包含索引、模型名和内容
+ */
+export interface IdeaEntry {
+  index: number
+  slug: string
+  content: string
+}
+
+/**
  * 读取会话目录中的所有 Idea
+ * 文件名格式: idea_{index}_{slug}.md
+ * 返回包含索引和模型名的数组，按索引排序
  */
 export async function readAllIdeas(
   sessionDir: FileSystemDirectoryHandle
-): Promise<Map<string, string>> {
-  const ideas = new Map<string, string>()
+): Promise<IdeaEntry[]> {
+  const ideas: IdeaEntry[] = []
 
   try {
     const ideasDir = await sessionDir.getDirectoryHandle('ideas')
@@ -116,16 +128,23 @@ export async function readAllIdeas(
     for await (const entry of (ideasDir as any).values()) {
       if (entry.kind === 'file' && entry.name.endsWith('.md')) {
         const content = await readTextFile(ideasDir, entry.name)
-        // 从文件名提取 slug: idea_gemini.md -> gemini
-        const slug = entry.name.replace(/^idea_/, '').replace(/\.md$/, '')
-        ideas.set(slug, content)
+        // 从文件名提取索引和 slug: idea_1_gemini_2_5_pro.md -> index=1, slug=gemini_2_5_pro
+        const match = entry.name.match(/^idea_(\d+)_(.+)\.md$/)
+        if (match) {
+          ideas.push({
+            index: parseInt(match[1], 10),
+            slug: match[2],
+            content
+          })
+        }
       }
     }
   } catch (e) {
     console.warn('读取 ideas 目录失败:', e)
   }
 
-  return ideas
+  // 按索引排序
+  return ideas.sort((a, b) => a.index - b.index)
 }
 
 /**
@@ -248,14 +267,14 @@ function sanitizeFilename(name: string): string {
 }
 
 /**
- * 合并多个 Idea 为评审输入
+ * 合并多个 Idea 为评审输入（仅用数字编号标识）
  */
 export function formatIdeasForReview(ideas: Map<string, string>): string {
   const sections: string[] = []
   let index = 1
 
-  for (const [slug, content] of ideas) {
-    sections.push(`========== Idea ${index} (来源: ${slug}) ==========\n\n${content}`)
+  for (const [, content] of ideas) {
+    sections.push(`========== Idea ${index} ==========\n\n${content}`)
     index++
   }
 
@@ -263,28 +282,19 @@ export function formatIdeasForReview(ideas: Map<string, string>): string {
 }
 
 /**
- * 合并评审和 Idea 为筛选输入
+ * 合并评审报告为筛选输入（仅包含评审报告，用数字编号标识评审来源）
  */
 export function formatForSummarizer(
-  ideas: Map<string, string>,
+  _ideas: Map<string, string>,
   reviews: Map<string, string>
 ): string {
   const sections: string[] = []
+  let index = 1
 
-  // 添加所有 Idea
-  sections.push('# 所有生成的 Idea\n')
-  let ideaIndex = 1
-  for (const [slug, content] of ideas) {
-    sections.push(`## Idea ${ideaIndex} (来源: ${slug})\n\n${content}`)
-    ideaIndex++
-  }
-
-  // 添加所有评审
-  sections.push('\n\n# 所有评审报告\n')
-  let reviewIndex = 1
-  for (const [slug, content] of reviews) {
-    sections.push(`## 评审 ${reviewIndex} (来源: ${slug})\n\n${content}`)
-    reviewIndex++
+  sections.push('# 评审报告汇总\n')
+  for (const [, content] of reviews) {
+    sections.push(`## 评审 ${index}\n\n${content}`)
+    index++
   }
 
   return sections.join('\n\n')

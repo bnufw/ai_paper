@@ -129,6 +129,7 @@ export class IdeaWorkflowEngine {
   private state: WorkflowState = createInitialState()
   private abortController: AbortController | null = null
   private listeners: Set<StateListener> = new Set()
+  private isRunning = false  // 独立的运行锁，防止重入
 
   /**
    * 获取当前状态
@@ -249,6 +250,13 @@ export class IdeaWorkflowEngine {
    * 运行工作流
    */
   async run(groupId: number): Promise<void> {
+    // 防重入：使用独立锁而非 phase（避免 reset 后被绕过）
+    if (this.isRunning) {
+      console.warn('工作流已在运行中，忽略重复调用')
+      return
+    }
+    this.isRunning = true
+
     // 重置状态
     this.reset()
     this.abortController = new AbortController()
@@ -265,8 +273,17 @@ export class IdeaWorkflowEngine {
 
       // 获取工作流配置
       const config = await getIdeaWorkflowConfig()
-      const enabledGenerators = config.generators.filter(g => g.enabled)
-      const enabledEvaluators = config.evaluators.filter(e => e.enabled)
+      // 按 slug 去重（防止同一模型被配置多次）
+      const dedupeBySlug = (models: typeof config.generators) => {
+        const seen = new Set<string>()
+        return models.filter(m => {
+          if (seen.has(m.slug)) return false
+          seen.add(m.slug)
+          return true
+        })
+      }
+      const enabledGenerators = dedupeBySlug(config.generators.filter(g => g.enabled))
+      const enabledEvaluators = dedupeBySlug(config.evaluators.filter(e => e.enabled))
 
       if (enabledGenerators.length === 0) {
         throw new Error('没有启用的生成器模型，请先在设置中配置')
@@ -320,7 +337,6 @@ export class IdeaWorkflowEngine {
 
           if (isValidResponse(response)) {
             ideas.set(gen.slug, response.content)
-            await saveIdea(sessionDir, gen.slug, response.content)
             this.updateModelStatus('generators', gen.slug, 'completed', response.content)
           } else {
             this.updateModelStatus('generators', gen.slug, 'failed', undefined, response.error || '生成失败')
@@ -336,6 +352,13 @@ export class IdeaWorkflowEngine {
       // 检查是否有有效的 Idea
       if (ideas.size === 0) {
         throw new Error('所有生成器都失败了，无法继续')
+      }
+
+      // 按固定顺序分配索引并保存 Idea 文件
+      let ideaIndex = 1
+      for (const [slug, content] of ideas) {
+        await saveIdea(sessionDir, ideaIndex, slug, content)
+        ideaIndex++
       }
 
       // ========== 阶段 2: 评审 ==========
@@ -430,6 +453,8 @@ export class IdeaWorkflowEngine {
           })
         }
       }
+    } finally {
+      this.isRunning = false  // 无论成功失败都释放锁
     }
   }
 }
