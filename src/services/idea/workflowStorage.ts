@@ -104,13 +104,23 @@ export async function saveBestIdea(
 }
 
 /**
+ * Idea 条目，包含索引、模型名和内容
+ */
+export interface IdeaEntry {
+  index: number
+  slug: string
+  content: string
+}
+
+/**
  * 读取会话目录中的所有 Idea
  * 文件名格式: idea_{index}_{slug}.md
+ * 返回包含索引和模型名的数组，按索引排序
  */
 export async function readAllIdeas(
   sessionDir: FileSystemDirectoryHandle
-): Promise<Map<string, string>> {
-  const ideas = new Map<string, string>()
+): Promise<IdeaEntry[]> {
+  const ideas: IdeaEntry[] = []
 
   try {
     const ideasDir = await sessionDir.getDirectoryHandle('ideas')
@@ -118,17 +128,23 @@ export async function readAllIdeas(
     for await (const entry of (ideasDir as any).values()) {
       if (entry.kind === 'file' && entry.name.endsWith('.md')) {
         const content = await readTextFile(ideasDir, entry.name)
-        // 从文件名提取 slug: idea_1_gemini_2_5_pro.md -> gemini_2_5_pro
-        const match = entry.name.match(/^idea_\d+_(.+)\.md$/)
-        const slug = match ? match[1] : entry.name.replace(/\.md$/, '')
-        ideas.set(slug, content)
+        // 从文件名提取索引和 slug: idea_1_gemini_2_5_pro.md -> index=1, slug=gemini_2_5_pro
+        const match = entry.name.match(/^idea_(\d+)_(.+)\.md$/)
+        if (match) {
+          ideas.push({
+            index: parseInt(match[1], 10),
+            slug: match[2],
+            content
+          })
+        }
       }
     }
   } catch (e) {
     console.warn('读取 ideas 目录失败:', e)
   }
 
-  return ideas
+  // 按索引排序
+  return ideas.sort((a, b) => a.index - b.index)
 }
 
 /**

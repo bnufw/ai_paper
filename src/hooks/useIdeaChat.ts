@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { type IdeaMessage, getIdeaMessages, saveIdeaMessage, deleteIdeaMessages, getPaperMarkdown } from '../services/storage/db'
-import { getSessionDirectory, readBestIdea, readAllIdeas } from '../services/idea/workflowStorage'
+import { getSessionDirectory, readBestIdea, readAllIdeas, type IdeaEntry } from '../services/idea/workflowStorage'
 import { sendMessageToGemini } from '../services/ai/geminiClient'
 import type { IdeaSession } from '../types/idea'
 
@@ -16,7 +16,7 @@ interface IdeaChatState {
   streamingThought: string
   streamingStartTime: Date | null
   bestIdea: string | null
-  allIdeas: Map<string, string>
+  allIdeas: IdeaEntry[]
   currentIdeaSlug: string
 }
 
@@ -34,7 +34,7 @@ export function useIdeaChat(session: IdeaSession | null) {
     streamingThought: '',
     streamingStartTime: null,
     bestIdea: null,
-    allIdeas: new Map(),
+    allIdeas: [],
     currentIdeaSlug: 'best_idea'
   })
 
@@ -47,7 +47,7 @@ export function useIdeaChat(session: IdeaSession | null) {
         ...prev,
         messages: [],
         bestIdea: null,
-        allIdeas: new Map(),
+        allIdeas: [],
         currentIdeaSlug: 'best_idea',
         error: ''
       }))
@@ -60,7 +60,7 @@ export function useIdeaChat(session: IdeaSession | null) {
       ...prev,
       messages: [],
       bestIdea: null,
-      allIdeas: new Map(),
+      allIdeas: [],
       error: ''
     }))
     contextRef.current = null
@@ -89,10 +89,10 @@ export function useIdeaChat(session: IdeaSession | null) {
         const contextParts: string[] = []
         contextParts.push(`# 当前最佳 Idea\n\n${bestIdea}`)
 
-        // 添加所有候选 ideas
-        if (allIdeas.size > 0) {
-          const ideasContent = Array.from(allIdeas.entries())
-            .map(([slug, content]) => `## ${slug}\n\n${content}`)
+        // 添加所有候选 ideas（使用索引编号）
+        if (allIdeas.length > 0) {
+          const ideasContent = allIdeas
+            .map(idea => `## Idea ${idea.index}\n\n${idea.content}`)
             .join('\n\n')
           contextParts.push(`# 所有候选 Ideas\n\n${ideasContent}`)
         }
@@ -129,7 +129,14 @@ export function useIdeaChat(session: IdeaSession | null) {
     if (state.currentIdeaSlug === 'best_idea') {
       return state.bestIdea
     }
-    return state.allIdeas.get(state.currentIdeaSlug) || null
+    // currentIdeaSlug 格式为 "idea_1"，提取索引
+    const match = state.currentIdeaSlug.match(/^idea_(\d+)$/)
+    if (match) {
+      const index = parseInt(match[1], 10)
+      const idea = state.allIdeas.find(i => i.index === index)
+      return idea?.content || null
+    }
+    return null
   }, [state.currentIdeaSlug, state.bestIdea, state.allIdeas])
 
   // 解析消息中的论文引用并加载 markdown 内容（带截断）
