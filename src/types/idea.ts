@@ -29,8 +29,8 @@ export interface ThinkingConfig {
   includeThoughts?: boolean
   // Gemini 3 Pro: thinkingLevel (low, high)
   thinkingLevel?: 'low' | 'high'
-  // OpenAI GPT-5: reasoningEffort + verbosity
-  reasoningEffort?: 'minimal' | 'low' | 'medium' | 'high' | 'none'
+  // OpenAI GPT-5/5.1/5.2: reasoningEffort + verbosity (5.2 新增 xhigh)
+  reasoningEffort?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'none'
   verbosity?: 'low' | 'medium' | 'high'
   // Anthropic Claude: thinking.type + budget_tokens
   thinkingType?: 'enabled' | 'disabled'
@@ -221,6 +221,19 @@ export const PRESET_GENERATORS: ModelConfig[] = [
     maxTokens: 8000,
     thinkingConfig: {
       reasoningEffort: 'low',
+      verbosity: 'low'
+    }
+  },
+  {
+    id: 'preset-gpt52-gen',
+    slug: 'GPT-5.2',
+    provider: 'openai',
+    model: 'gpt-5.2',
+    enabled: false,
+    isPreset: true,
+    maxTokens: 8000,
+    thinkingConfig: {
+      reasoningEffort: 'xhigh',
       verbosity: 'low'
     }
   },

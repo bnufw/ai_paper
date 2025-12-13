@@ -696,6 +696,7 @@ function ModelCard({
                   <option value="low">Low</option>
                   <option value="medium">Medium</option>
                   <option value="high">High</option>
+                  {model.model === 'gpt-5.2' && <option value="xhigh">XHigh</option>}
                 </select>
               </div>
               <div>
