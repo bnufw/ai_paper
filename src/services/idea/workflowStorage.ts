@@ -248,43 +248,30 @@ function sanitizeFilename(name: string): string {
 }
 
 /**
- * 合并多个 Idea 为评审输入
+ * 合并多个 Idea 为评审输入（仅包含 Idea 内容，用模型名称标识）
  */
 export function formatIdeasForReview(ideas: Map<string, string>): string {
   const sections: string[] = []
-  let index = 1
 
   for (const [slug, content] of ideas) {
-    sections.push(`========== Idea ${index} (来源: ${slug}) ==========\n\n${content}`)
-    index++
+    sections.push(`========== ${slug} 的 Idea ==========\n\n${content}`)
   }
 
   return sections.join('\n\n')
 }
 
 /**
- * 合并评审和 Idea 为筛选输入
+ * 合并评审报告为筛选输入（仅包含评审报告，不含原始 Idea）
  */
 export function formatForSummarizer(
-  ideas: Map<string, string>,
+  _ideas: Map<string, string>,
   reviews: Map<string, string>
 ): string {
   const sections: string[] = []
 
-  // 添加所有 Idea
-  sections.push('# 所有生成的 Idea\n')
-  let ideaIndex = 1
-  for (const [slug, content] of ideas) {
-    sections.push(`## Idea ${ideaIndex} (来源: ${slug})\n\n${content}`)
-    ideaIndex++
-  }
-
-  // 添加所有评审
-  sections.push('\n\n# 所有评审报告\n')
-  let reviewIndex = 1
+  sections.push('# 评审报告汇总\n')
   for (const [slug, content] of reviews) {
-    sections.push(`## 评审 ${reviewIndex} (来源: ${slug})\n\n${content}`)
-    reviewIndex++
+    sections.push(`## ${slug} 的评审报告\n\n${content}`)
   }
 
   return sections.join('\n\n')
