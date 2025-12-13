@@ -67,15 +67,16 @@ export async function createWorkflowDirectory(
 }
 
 /**
- * 保存生成的 Idea
+ * 保存生成的 Idea（文件名包含索引和模型名）
  */
 export async function saveIdea(
   sessionDir: FileSystemDirectoryHandle,
+  index: number,
   slug: string,
   content: string
 ): Promise<void> {
   const ideasDir = await sessionDir.getDirectoryHandle('ideas')
-  const filename = `idea_${sanitizeFilename(slug)}.md`
+  const filename = `idea_${index}_${sanitizeFilename(slug)}.md`
   await writeTextFile(ideasDir, filename, content)
 }
 
@@ -104,6 +105,7 @@ export async function saveBestIdea(
 
 /**
  * 读取会话目录中的所有 Idea
+ * 文件名格式: idea_{index}_{slug}.md
  */
 export async function readAllIdeas(
   sessionDir: FileSystemDirectoryHandle
@@ -116,8 +118,9 @@ export async function readAllIdeas(
     for await (const entry of (ideasDir as any).values()) {
       if (entry.kind === 'file' && entry.name.endsWith('.md')) {
         const content = await readTextFile(ideasDir, entry.name)
-        // 从文件名提取 slug: idea_gemini.md -> gemini
-        const slug = entry.name.replace(/^idea_/, '').replace(/\.md$/, '')
+        // 从文件名提取 slug: idea_1_gemini_2_5_pro.md -> gemini_2_5_pro
+        const match = entry.name.match(/^idea_\d+_(.+)\.md$/)
+        const slug = match ? match[1] : entry.name.replace(/\.md$/, '')
         ideas.set(slug, content)
       }
     }
@@ -248,30 +251,34 @@ function sanitizeFilename(name: string): string {
 }
 
 /**
- * 合并多个 Idea 为评审输入（仅包含 Idea 内容，用模型名称标识）
+ * 合并多个 Idea 为评审输入（仅用数字编号标识）
  */
 export function formatIdeasForReview(ideas: Map<string, string>): string {
   const sections: string[] = []
+  let index = 1
 
-  for (const [slug, content] of ideas) {
-    sections.push(`========== ${slug} 的 Idea ==========\n\n${content}`)
+  for (const [, content] of ideas) {
+    sections.push(`========== Idea ${index} ==========\n\n${content}`)
+    index++
   }
 
   return sections.join('\n\n')
 }
 
 /**
- * 合并评审报告为筛选输入（仅包含评审报告，不含原始 Idea）
+ * 合并评审报告为筛选输入（仅包含评审报告，用数字编号标识评审来源）
  */
 export function formatForSummarizer(
   _ideas: Map<string, string>,
   reviews: Map<string, string>
 ): string {
   const sections: string[] = []
+  let index = 1
 
   sections.push('# 评审报告汇总\n')
-  for (const [slug, content] of reviews) {
-    sections.push(`## ${slug} 的评审报告\n\n${content}`)
+  for (const [, content] of reviews) {
+    sections.push(`## 评审 ${index}\n\n${content}`)
+    index++
   }
 
   return sections.join('\n\n')

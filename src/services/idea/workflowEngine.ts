@@ -242,7 +242,6 @@ export class IdeaWorkflowEngine {
 
             if (isValidResponse(response)) {
               ideas.set(gen.slug, response.content)
-              await saveIdea(sessionDir, gen.slug, response.content)
               this.updateModelStatus('generators', gen.slug, 'completed', response.content)
             } else {
               this.updateModelStatus('generators', gen.slug, 'failed', undefined, response.error || '生成失败')
@@ -263,6 +262,13 @@ export class IdeaWorkflowEngine {
       // 检查是否有有效的 Idea
       if (ideas.size === 0) {
         throw new Error('所有生成器都失败了，无法继续')
+      }
+
+      // 按固定顺序分配索引并保存 Idea 文件
+      let ideaIndex = 1
+      for (const [slug, content] of ideas) {
+        await saveIdea(sessionDir, ideaIndex, slug, content)
+        ideaIndex++
       }
 
       // ========== 阶段 2: 评审 ==========
