@@ -15,6 +15,7 @@ import { cleanupPaperCache } from '../../services/ai/cacheService'
 import GroupList from './GroupList'
 import IdeaSessionList from './IdeaSessionList'
 import { IdeaWorkflowRunner, IdeaSettingsModal } from '../idea'
+import ThemeToggle from '../common/ThemeToggle'
 
 interface SidebarProps {
   currentPaperId: number | null
@@ -121,22 +122,22 @@ export default function Sidebar({
   }
 
   return (
-    <div className={`bg-gray-800 text-white flex flex-col transition-all duration-300 ${
+    <div className={`bg-gray-100 border-r border-gray-200 text-gray-800 flex flex-col transition-all duration-300 ${
       collapsed ? 'w-16' : 'w-64'
     }`}>
       {/* 折叠/展开按钮 */}
-      <div className="p-4 border-b border-gray-700 flex justify-between items-center">
+      <div className="p-4 border-b border-gray-200 flex justify-between items-center">
         {!collapsed && (
           <button
             onClick={onNewPaper}
-            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg text-sm"
+            className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-medium py-2.5 px-4 rounded-xl text-sm shadow-cute transition-all duration-200 hover:shadow-cute-lg hover:-translate-y-0.5"
           >
             + 上传新论文
           </button>
         )}
         <button
           onClick={onToggleCollapse}
-          className={`text-gray-400 hover:text-white transition-colors ${
+          className={`text-gray-500 hover:text-blue-500 hover:bg-blue-50 rounded-lg p-1.5 transition-all duration-200 ${
             collapsed ? 'w-full flex justify-center' : 'ml-2'
           }`}
           title={collapsed ? '展开侧边栏' : '收起侧边栏'}
@@ -147,10 +148,10 @@ export default function Sidebar({
 
       {collapsed ? (
         /* 折叠视图：仅显示图标 */
-        <div className="flex-1 flex flex-col items-center py-4 space-y-4">
+        <div className="flex-1 flex flex-col items-center py-4 space-y-3">
           <button
             onClick={onNewPaper}
-            className="w-10 h-10 bg-blue-600 hover:bg-blue-700 rounded-lg flex items-center justify-center"
+            className="w-10 h-10 bg-blue-500 hover:bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-cute transition-all duration-200 hover:scale-105"
             title="上传新论文"
           >
             +
@@ -159,10 +160,10 @@ export default function Sidebar({
             <button
               key={paper.id}
               onClick={() => onSelectPaper(paper.id!)}
-              className={`w-10 h-10 rounded-lg flex items-center justify-center text-xs ${
+              className={`w-10 h-10 rounded-xl flex items-center justify-center text-xs transition-all duration-200 ${
                 currentPaperId === paper.id
-                  ? 'bg-blue-600'
-                  : 'bg-gray-700 hover:bg-gray-600'
+                  ? 'bg-blue-500 text-white shadow-cute'
+                  : 'bg-gray-200 hover:bg-gray-300 text-gray-600'
               }`}
               title={paper.title}
             >
@@ -173,13 +174,13 @@ export default function Sidebar({
       ) : (
         /* 展开视图：显示分组列表 */
         loading ? (
-          <div className="p-4 text-center text-gray-400">
-            加载中...
+          <div className="p-4 text-center text-gray-500">
+            <span className="animate-pulse-soft">加载中...</span>
           </div>
         ) : papers.length === 0 ? (
-          <div className="p-4 text-center text-gray-400">
+          <div className="p-4 text-center text-gray-500">
             <p className="mb-2">暂无论文</p>
-            <p className="text-sm">点击上方按钮上传</p>
+            <p className="text-sm text-gray-400">点击上方按钮上传</p>
           </div>
         ) : (
           <GroupList
@@ -206,24 +207,29 @@ export default function Sidebar({
       )}
 
       {/* 底部：设置和统计信息 */}
-      <div className="border-t border-gray-700">
+      <div className="border-t border-gray-200 bg-gray-50">
         {!collapsed && (
-          <div className="p-4 text-sm text-gray-400 flex justify-between items-center">
+          <div className="p-4 text-sm text-gray-500 flex justify-between items-center">
             <span>共 {papers.length} 篇论文</span>
-            <button
-              onClick={() => setIdeaSettingsOpen(true)}
-              className="text-gray-400 hover:text-yellow-400 transition-colors"
-              title="Idea 工作流设置"
-            >
-              🚀
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIdeaSettingsOpen(true)}
+                className="text-gray-400 hover:text-blue-500 transition-colors p-1 rounded-lg hover:bg-blue-50"
+                title="Idea 工作流设置"
+              >
+                🚀
+              </button>
+            </div>
           </div>
         )}
-        <div className="p-4">
+
+        {/* 主题切换和设置按钮 */}
+        <div className={`p-3 flex ${collapsed ? 'flex-col items-center gap-2' : 'items-center justify-between'}`}>
+          {!collapsed && <ThemeToggle />}
           <button
             onClick={onOpenSettings}
-            className={`w-full bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded-lg transition-colors ${
-              collapsed ? 'flex justify-center' : ''
+            className={`bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-2 px-4 rounded-xl transition-all duration-200 hover:shadow-sm ${
+              collapsed ? 'w-10 h-10 flex justify-center items-center p-0' : ''
             }`}
             title="设置"
           >

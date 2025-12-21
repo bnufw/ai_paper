@@ -288,9 +288,9 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
   }
 
   return (
-    <div className="h-full w-full flex flex-col bg-gray-50 overflow-hidden">
+    <div className="h-full w-full flex flex-col bg-gray-50 overflow-hidden transition-colors duration-300">
       {/* 顶部：会话列表 + 模型名 */}
-      <div className="bg-white border-b flex items-center min-w-0 overflow-hidden">
+      <div className="bg-gray-100 border-b border-gray-200 flex items-center min-w-0 overflow-hidden">
         <ConversationList
           conversations={conversations}
           currentConversationId={currentConversationId}
@@ -301,10 +301,10 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
           onClear={clearMessages}
           onNewConversation={createNewConversation}
         />
-        
+
         {/* 模型名显示 */}
-        <div className="flex-shrink-0 px-2 py-1.5 border-l flex items-center">
-          <span className="text-xs text-gray-600 font-medium bg-blue-50 px-2 py-1 rounded whitespace-nowrap">
+        <div className="flex-shrink-0 px-2 py-1.5 border-l border-gray-200 flex items-center">
+          <span className="text-xs text-blue-600 font-medium bg-blue-100 px-2.5 py-1 rounded-full whitespace-nowrap">
             {modelName}
           </span>
         </div>
@@ -316,8 +316,9 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
       <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 ? (
           <div className="text-center text-gray-500 mt-8">
-            <p className="text-lg mb-2">👋 开始对话</p>
-            <p className="text-sm">向AI提问关于这篇论文的任何问题</p>
+            <div className="text-4xl mb-3">💬</div>
+            <p className="text-lg mb-2 font-medium text-gray-600">开始对话</p>
+            <p className="text-sm text-gray-400">向 AI 提问关于这篇论文的任何问题</p>
           </div>
         ) : (
           messages.map((msg, index) => {
@@ -342,12 +343,12 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
               <div
                 className={`${
                   msg.role === 'user' ? 'max-w-[70%]' : 'max-w-[95%]'
-                } rounded-lg p-3 overflow-hidden ${
+                } rounded-2xl p-3.5 overflow-hidden transition-all duration-200 ${
                   msg.role === 'user'
-                    ? 'bg-blue-600 text-white'
+                    ? 'bg-blue-500 text-white shadow-cute'
                     : msg.addedToNote
-                      ? 'bg-pink-50 text-gray-900 border border-pink-200'
-                      : 'bg-white text-gray-800 border border-gray-200'
+                      ? 'bg-blue-50 text-gray-800 border-2 border-blue-200'
+                      : 'bg-gray-100 text-gray-800 border border-gray-200'
                 }`}
               >
                 {msg.role === 'user' ? (
@@ -497,7 +498,7 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
         {/* 流式输出显示 - 有思考内容、正式内容或正在加载时显示 */}
         {(streamingThought || streamingText || (loading && streamingStartTime)) && (
           <div className="flex justify-start">
-            <div className="max-w-[95%] bg-white text-gray-800 border border-gray-200 rounded-lg p-3 overflow-hidden">
+            <div className="max-w-[95%] bg-gray-100 text-gray-800 border border-gray-200 rounded-2xl p-3.5 overflow-hidden transition-colors duration-200">
               {/* 流式思考过程 - 有思考内容或正在加载时显示 */}
               {(streamingThought || (loading && streamingStartTime && !streamingText)) && (
                 <details className="mb-3 rounded-lg bg-blue-50/50 overflow-hidden border border-blue-100">
@@ -541,11 +542,11 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
         {/* 加载指示器 - 仅在没有任何流式输出时显示 */}
         {loading && !streamingText && !streamingThought && !streamingStartTime && (
           <div className="flex justify-start">
-            <div className="bg-white border border-gray-200 rounded-lg p-3">
+            <div className="bg-gray-100 border border-gray-200 rounded-2xl p-3.5 transition-colors duration-200">
               <div className="flex space-x-2">
-                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" />
-                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-100" />
-                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-200" />
+                <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" />
+                <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce delay-100" />
+                <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce delay-200" />
               </div>
             </div>
           </div>
@@ -562,12 +563,12 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
       )}
 
       {/* 输入框 */}
-      <div className="bg-white border-t p-3">
+      <div className="bg-gray-100 border-t border-gray-200 p-3">
         <div className="flex flex-col gap-2 max-w-3xl mx-auto">
           {/* 编辑提示 */}
           {editingMessageId && (
-            <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
-              <div className="flex items-center gap-2 text-sm text-blue-800">
+            <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-xl px-3 py-2">
+              <div className="flex items-center gap-2 text-sm text-blue-700">
                 <span>✏️</span>
                 <span>编辑消息中 - 发送后将重新生成回复</span>
               </div>
@@ -598,14 +599,14 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
               placeholder="输入问题... (Enter发送)"
-              className="flex-1 border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none text-gray-900 text-sm"
+              className="flex-1 border border-gray-300 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-blue-400 focus:border-blue-400 resize-none text-gray-800 text-sm bg-gray-50 transition-all duration-200"
               rows={2}
               disabled={loading}
             />
             <button
               onClick={handleSend}
               disabled={(!inputValue.trim() && pendingImages.length === 0) || loading}
-              className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+              className="px-5 py-2.5 bg-blue-500 text-white text-sm rounded-xl hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all duration-200 shadow-cute hover:shadow-cute-lg font-medium"
             >
               {loading ? '...' : '发送'}
             </button>
@@ -626,7 +627,7 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
       {/* 斜杠命令弹窗 */}
       {slashCommand && (
         <div
-          className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[160px]"
+          className="fixed z-50 bg-gray-50 border border-gray-200 rounded-lg shadow-lg py-1 min-w-[160px]"
           style={{
             bottom: `calc(100vh - ${slashCommand.position.top}px + 8px)`,
             left: slashCommand.position.left

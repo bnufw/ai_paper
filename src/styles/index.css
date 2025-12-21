@@ -2,12 +2,133 @@
 @tailwind components;
 @tailwind utilities;
 
-/* 禁用整体页面滚动 */
+/* ========================================
+   🌸 樱花星尘主题 - Sakura Stardust Theme
+   ======================================== */
+
 @layer base {
+  /* -------- Light Mode: 粉嫩可爱 🌸 -------- */
+  :root {
+    color-scheme: light;
+
+    /* Gray - 温暖粉灰色调 */
+    --gray-50: 255 247 251;   /* #FFF7FB 温暖奶白粉 */
+    --gray-100: 255 240 247;  /* #FFF0F7 樱花白 */
+    --gray-200: 243 220 235;  /* #F3DCEB 淡粉边框 */
+    --gray-300: 235 199 220;  /* #EBC7DC 粉灰 */
+    --gray-400: 201 166 193;  /* #C9A6C1 中粉灰 */
+    --gray-500: 162 135 155;  /* #A2879B 深粉灰 */
+    --gray-600: 123 102 118;  /* #7B6676 暗粉灰 */
+    --gray-700: 92 75 90;     /* #5C4B5A 深摩卡 */
+    --gray-800: 58 44 62;     /* #3A2C3E 深紫摩卡 */
+    --gray-900: 38 27 44;     /* #261B2C 最深 */
+    --gray-950: 26 18 30;     /* #1A121E 纯黑替代 */
+
+    /* Blue -> Pink 主色调 */
+    --blue-50: 255 240 246;   /* #FFF0F6 最浅粉 */
+    --blue-100: 255 220 235;  /* #FFDCEB 浅粉 */
+    --blue-200: 255 198 223;  /* #FFC6DF 淡粉 */
+    --blue-300: 255 163 207;  /* #FFA3CF 中粉 */
+    --blue-400: 255 140 192;  /* #FF8CC0 亮粉 */
+    --blue-500: 255 111 181;  /* #FF6FB5 主粉色 */
+    --blue-600: 242 85 165;   /* #F255A5 深粉 */
+    --blue-700: 215 67 149;   /* #D74395 更深粉 */
+    --blue-800: 180 51 124;   /* #B4337C 最深粉 */
+
+    /* Green - 薄荷绿 */
+    --green-50: 236 253 245;  /* #ECFDF5 */
+    --green-100: 209 250 229; /* #D1FAE5 */
+    --green-500: 127 227 197; /* #7FE3C5 薄荷绿 */
+    --green-600: 47 174 138;  /* #2FAE8A 深薄荷 */
+
+    /* Red - 柔和红 */
+    --red-50: 255 241 242;    /* #FFF1F2 */
+    --red-100: 255 228 230;   /* #FFE4E6 */
+    --red-200: 254 202 202;   /* #FECACA */
+    --red-400: 251 113 133;   /* #FB7185 */
+    --red-500: 244 63 94;     /* #F43F5E */
+    --red-600: 225 29 72;     /* #E11D48 */
+
+    /* Yellow - 暖黄 */
+    --yellow-50: 255 251 235; /* #FFFBEB */
+    --yellow-100: 254 243 199;/* #FEF3C7 */
+    --yellow-200: 253 230 138;/* #FDE68A */
+    --yellow-400: 251 191 36; /* #FBBF24 */
+    --yellow-500: 245 158 11; /* #F59E0B */
+    --yellow-600: 217 119 6;  /* #D97706 */
+
+    /* Orange - 暖橙 */
+    --orange-100: 255 237 213;/* #FFEDD5 */
+    --orange-200: 254 215 170;/* #FED7AA */
+    --orange-400: 251 146 60; /* #FB923C */
+    --orange-500: 249 115 22; /* #F97316 */
+    --orange-600: 234 88 12;  /* #EA580C */
+  }
+
+  /* -------- Dark Mode: 可爱星空 🌙 -------- */
+  [data-theme="dark"] {
+    color-scheme: dark;
+
+    /* Gray - 深空紫色调 (数值反转，50最深，900最浅) */
+    --gray-50: 35 33 54;      /* #232136 深空紫背景 */
+    --gray-100: 42 39 63;     /* #2A273F 星夜蓝 */
+    --gray-200: 57 53 82;     /* #393552 深紫表面 */
+    --gray-300: 68 65 90;     /* #44415A 边框色 */
+    --gray-400: 108 90 121;   /* #6C5A79 中灰 */
+    --gray-500: 144 140 170;  /* #908CAA 星尘灰 */
+    --gray-600: 177 161 194;  /* #B1A1C2 浅灰 */
+    --gray-700: 200 190 212;  /* #C8BED4 更浅 */
+    --gray-800: 224 222 244;  /* #E0DEF4 星尘白 */
+    --gray-900: 243 234 247;  /* #F3EAF7 最浅 */
+    --gray-950: 255 250 255;  /* #FFFAFF 纯白替代 */
+
+    /* Blue -> Coral Pink 主色调 */
+    --blue-50: 59 42 55;      /* #3B2A37 最深粉背景 */
+    --blue-100: 82 58 75;     /* #523A4B 深粉 */
+    --blue-200: 120 80 105;   /* #785069 中深粉 */
+    --blue-300: 170 110 145;  /* #AA6E91 中粉 */
+    --blue-400: 220 140 175;  /* #DC8CAF 亮粉 */
+    --blue-500: 255 125 187;  /* #FF7DBB 珊瑚粉主色 */
+    --blue-600: 255 145 195;  /* #FF91C3 更亮粉 */
+    --blue-700: 255 165 205;  /* #FFA5CD 高亮粉 */
+    --blue-800: 255 185 215;  /* #FFB9D7 最亮粉 */
+
+    /* Green - 极光绿 */
+    --green-50: 28 44 42;     /* #1C2C2A */
+    --green-100: 40 65 60;    /* #28413C */
+    --green-500: 101 214 182; /* #65D6B6 极光绿 */
+    --green-600: 127 227 197; /* #7FE3C5 亮极光绿 */
+
+    /* Red - 柔和暖红 */
+    --red-50: 55 30 35;       /* #371E23 */
+    --red-100: 75 40 50;      /* #4B2832 */
+    --red-200: 107 55 70;     /* #6B3746 */
+    --red-400: 220 100 120;   /* #DC6478 */
+    --red-500: 240 114 138;   /* #F0728A */
+    --red-600: 255 140 160;   /* #FF8CA0 */
+
+    /* Yellow - 星光黄 */
+    --yellow-50: 45 40 25;    /* #2D2819 */
+    --yellow-100: 65 55 30;   /* #41371E */
+    --yellow-200: 100 85 45;  /* #64552D */
+    --yellow-400: 220 175 80; /* #DCAF50 */
+    --yellow-500: 245 200 100;/* #F5C864 */
+    --yellow-600: 255 215 120;/* #FFD778 */
+
+    /* Orange - 暖橙 */
+    --orange-100: 60 40 30;   /* #3C281E */
+    --orange-200: 90 60 40;   /* #5A3C28 */
+    --orange-400: 230 150 90; /* #E6965A */
+    --orange-500: 250 170 110;/* #FAAA6E */
+    --orange-600: 255 190 130;/* #FFBE82 */
+  }
+
+  /* 全局基础样式 */
   html,
   body {
     height: 100%;
     overflow: hidden;
+    @apply bg-gray-50 text-gray-800 transition-colors duration-300;
   }
 
   #root {
@@ -15,25 +136,34 @@
   }
 }
 
-/* Markdown 内容增强样式 */
+/* ========================================
+   Markdown 内容增强样式
+   ======================================== */
+
 @layer components {
   /* 论文查看器的 prose 样式优化 */
   .prose code {
-    @apply bg-gray-100 px-1.5 py-0.5 rounded text-sm;
+    @apply bg-gray-200 text-gray-800 px-1.5 py-0.5 rounded text-sm;
   }
 
-  /* 移除内联代码的自动反引号 */
   .prose code::before,
   .prose code::after {
     content: '' !important;
   }
 
   .prose pre {
-    @apply bg-gray-900 text-gray-100;
+    @apply bg-gray-900 text-gray-100 rounded-xl;
+  }
+
+  /* 深色模式下代码块保持深色背景，避免刺眼 */
+  [data-theme="dark"] .prose pre,
+  [data-theme="dark"] .prose-sm pre {
+    background-color: #1e1e2e;
+    color: #cdd6f4;
   }
 
   .prose pre code {
-    @apply bg-transparent p-0 text-sm;
+    @apply bg-transparent p-0 text-sm text-gray-100;
   }
 
   .prose pre code::before,
@@ -47,7 +177,7 @@
   }
 
   .prose th {
-    @apply bg-gray-100 font-semibold;
+    @apply bg-gray-100 font-semibold text-gray-700;
   }
 
   .prose td,
@@ -57,17 +187,17 @@
 
   /* 链接样式 */
   .prose a {
-    @apply text-blue-600 hover:text-blue-800 underline;
+    @apply text-blue-600 hover:text-blue-700 underline decoration-blue-300 underline-offset-2 transition-colors;
   }
 
   /* 引用块样式 */
   .prose blockquote {
-    @apply border-l-4 border-blue-500 bg-blue-50 pl-4 py-2 italic;
+    @apply border-l-4 border-blue-400 bg-blue-50 pl-4 py-2 italic rounded-r-lg;
   }
 
   /* 聊天消息中的 prose 样式调整 */
   .prose-sm code {
-    @apply bg-gray-100 px-1 py-0.5 rounded text-xs;
+    @apply bg-gray-200 text-gray-800 px-1 py-0.5 rounded text-xs;
   }
 
   .prose-sm code::before,
@@ -76,11 +206,11 @@
   }
 
   .prose-sm pre {
-    @apply bg-gray-900 text-gray-100 text-xs;
+    @apply bg-gray-900 text-gray-100 text-xs rounded-xl;
   }
 
   .prose-sm pre code {
-    @apply bg-transparent p-0;
+    @apply bg-transparent p-0 text-gray-100;
   }
 
   .prose-sm pre code::before,
@@ -96,5 +226,53 @@
   .prose-sm th {
     @apply px-2 py-1;
   }
+
+  /* 强制 prose 使用主题文本颜色 (解决深色模式文字不可见) */
+  .prose,
+  .prose-sm {
+    @apply text-gray-800;
+  }
+
+  .prose strong, .prose-sm strong,
+  .prose h1, .prose-sm h1,
+  .prose h2, .prose-sm h2,
+  .prose h3, .prose-sm h3,
+  .prose h4, .prose-sm h4,
+  .prose th, .prose-sm th {
+    @apply text-gray-900;
+  }
 }
 
+/* ========================================
+   可爱动效
+   ======================================== */
+
+@layer utilities {
+  /* 柔和弹跳动效 */
+  .animate-bounce-soft {
+    animation: bounce-soft 2s infinite;
+  }
+
+  @keyframes bounce-soft {
+    0%, 100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-5px);
+    }
+  }
+
+  /* 柔和脉冲 */
+  .animate-pulse-soft {
+    animation: pulse-soft 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  @keyframes pulse-soft {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.7;
+    }
+  }
+}

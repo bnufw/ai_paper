@@ -94,7 +94,7 @@ export default forwardRef<PaperMentionPopupRef, PaperMentionPopupProps>(function
     return (
       <div
         ref={popupRef}
-        className="fixed bg-white border border-gray-300 rounded-lg shadow-lg p-3 z-50 min-w-[300px]"
+        className="fixed bg-gray-50 border border-gray-300 rounded-lg shadow-lg p-3 z-50 min-w-[300px]"
         style={{ 
           top: position.top,
           left: position.left,
