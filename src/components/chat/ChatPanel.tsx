@@ -298,7 +298,6 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
           onDelete={deleteConversation}
           onRename={renameConversation}
           onExport={exportConversation}
-          onClear={clearMessages}
           onNewConversation={createNewConversation}
         />
 

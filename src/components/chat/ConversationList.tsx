@@ -8,7 +8,6 @@ interface ConversationListProps {
   onDelete: (id: number) => void
   onRename: (id: number, newTitle: string) => void
   onExport: (id: number) => void
-  onClear: () => void
   onNewConversation: () => void
 }
 
@@ -19,7 +18,6 @@ export default function ConversationList({
   onDelete,
   onRename,
   onExport,
-  onClear,
   onNewConversation
 }: ConversationListProps) {
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -70,11 +68,6 @@ export default function ConversationList({
       alert('导出失败,请重试')
       console.error(err)
     }
-  }
-
-  const handleClearClick = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    onClear()
   }
 
   return (
@@ -149,17 +142,6 @@ export default function ConversationList({
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                           </svg>
                         </button>
-                        {conv.id === currentConversationId && (
-                          <button
-                            onClick={(e) => handleClearClick(e)}
-                            className="p-1 hover:bg-orange-100 rounded"
-                            title="清空上下文"
-                          >
-                            <svg className="w-3 h-3 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M3 12l6.414 6.414a2 2 0 001.414.586H19a2 2 0 002-2V7a2 2 0 00-2-2h-8.172a2 2 0 00-1.414.586L3 12z" />
-                            </svg>
-                          </button>
-                        )}
                         <button
                           onClick={(e) => handleDeleteClick(e, conv.id!)}
                           className="p-1 hover:bg-red-100 rounded"
