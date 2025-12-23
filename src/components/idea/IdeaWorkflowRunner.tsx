@@ -11,19 +11,20 @@ interface Props {
   isOpen: boolean
   groupId: number
   groupName: string
+  selectedPaperIds?: number[]
   onClose: () => void
 }
 
-export function IdeaWorkflowRunner({ isOpen, groupId, groupName, onClose }: Props) {
+export function IdeaWorkflowRunner({ isOpen, groupId, groupName, selectedPaperIds, onClose }: Props) {
   const { state, isRunning, start, cancel, reset, getStageStats } = useIdeaWorkflow()
   const [, setTick] = useState(0)  // 用于强制刷新计时
 
   // 打开时自动开始
   useEffect(() => {
     if (isOpen && state.phase === 'idle') {
-      start(groupId)
+      start(groupId, selectedPaperIds)
     }
-  }, [isOpen, groupId, state.phase, start])
+  }, [isOpen, groupId, selectedPaperIds, state.phase, start])
 
   // 计时器：运行中时每秒刷新
   useEffect(() => {

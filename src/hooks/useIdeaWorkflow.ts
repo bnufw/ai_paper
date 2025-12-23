@@ -29,9 +29,9 @@ export function useIdeaWorkflow() {
   }, [])
 
   // 启动工作流
-  const start = useCallback(async (groupId: number) => {
+  const start = useCallback(async (groupId: number, paperIds?: number[]) => {
     setIsRunning(true)
-    await workflowEngine.run(groupId)
+    await workflowEngine.run(groupId, paperIds)
   }, [])
 
   // 取消工作流

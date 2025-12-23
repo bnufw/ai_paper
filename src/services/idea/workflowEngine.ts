@@ -249,7 +249,7 @@ export class IdeaWorkflowEngine {
   /**
    * 运行工作流
    */
-  async run(groupId: number): Promise<void> {
+  async run(groupId: number, paperIds?: number[]): Promise<void> {
     // 防重入：使用独立锁而非 phase（避免 reset 后被绕过）
     if (this.isRunning) {
       console.warn('工作流已在运行中，忽略重复调用')
@@ -306,7 +306,7 @@ export class IdeaWorkflowEngine {
       this.updateProgress(0, totalTasks, '收集上下文')
 
       // 收集生成器上下文（领域知识 + 论文笔记 + 用户研究方向）
-      const context = await collectGeneratorContext(groupId, groupName, config.userIdea || '')
+      const context = await collectGeneratorContext(groupId, groupName, config.userIdea || '', paperIds)
 
       if (signal.aborted) return
 

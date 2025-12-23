@@ -207,8 +207,10 @@ export async function getSessionDirectory(
 
 /**
  * 收集分组下所有论文的笔记内容
+ * @param groupId 分组ID
+ * @param paperIds 可选，指定要包含的论文ID列表；若不传则包含分组内所有论文
  */
-export async function collectGroupNotes(groupId: number): Promise<string> {
+export async function collectGroupNotes(groupId: number, paperIds?: number[]): Promise<string> {
   const rootHandle = await getDirectoryHandle()
   if (!rootHandle) {
     throw new Error('未配置存储目录')
@@ -220,7 +222,13 @@ export async function collectGroupNotes(groupId: number): Promise<string> {
   }
 
   // 获取分组下的所有论文
-  const papers = await db.papers.where('groupId').equals(groupId).toArray()
+  let papers = await db.papers.where('groupId').equals(groupId).toArray()
+
+  // 如果指定了 paperIds，则过滤
+  if (paperIds && paperIds.length > 0) {
+    const idSet = new Set(paperIds)
+    papers = papers.filter(p => p.id && idSet.has(p.id))
+  }
 
   if (papers.length === 0) {
     throw new Error('该分组下没有论文')
@@ -303,11 +311,16 @@ export function formatForSummarizer(
 /**
  * 收集生成器的完整上下文
  * 整合：领域知识 + 论文笔记 + 用户研究方向
+ * @param groupId 分组ID
+ * @param groupName 分组名称
+ * @param userIdea 用户研究方向
+ * @param paperIds 可选，指定要包含的论文ID列表
  */
 export async function collectGeneratorContext(
   groupId: number,
   groupName: string,
-  userIdea: string
+  userIdea: string,
+  paperIds?: number[]
 ): Promise<string> {
   const sections: string[] = []
 
@@ -318,7 +331,7 @@ export async function collectGeneratorContext(
   }
 
   // 2. 论文笔记（具体材料）
-  const notes = await collectGroupNotes(groupId)
+  const notes = await collectGroupNotes(groupId, paperIds)
   sections.push(`# 论文笔记\n\n${notes}`)
 
   // 3. 用户输入（放在最后，作为任务指令）

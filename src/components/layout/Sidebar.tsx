@@ -17,7 +17,7 @@ import { cleanupPaperCache } from '../../services/ai/cacheService'
 import { checkDirectoryPermission, getDirectoryHandle, renameDirectory } from '../../services/storage/fileSystem'
 import GroupList from './GroupList'
 import IdeaSessionList from './IdeaSessionList'
-import { IdeaWorkflowRunner, IdeaSettingsModal, CrossSessionEvaluator } from '../idea'
+import { IdeaWorkflowRunner, IdeaSettingsModal, CrossSessionEvaluator, PaperSelectionModal } from '../idea'
 
 interface SidebarProps {
   currentPaperId: number | null
@@ -50,6 +50,8 @@ export default function Sidebar({
   const [ideaSettingsOpen, setIdeaSettingsOpen] = useState(false)
   const [crossSessionEvaluatorOpen, setCrossSessionEvaluatorOpen] = useState(false)
   const [selectedGroup, setSelectedGroup] = useState<{ id: number; name: string } | null>(null)
+  const [paperSelectionOpen, setPaperSelectionOpen] = useState(false)
+  const [selectedPaperIds, setSelectedPaperIds] = useState<number[]>([])
 
   // 加载论文和分组列表
   const loadData = async () => {
@@ -179,9 +181,16 @@ export default function Sidebar({
     await loadData()
   }
 
-  // 打开 Idea 生成工作流
+  // 打开 Idea 生成工作流（先打开论文选择对话框）
   const handleGenerateIdea = (groupId: number, groupName: string) => {
     setSelectedGroup({ id: groupId, name: groupName })
+    setPaperSelectionOpen(true)
+  }
+
+  // 论文选择确认后启动工作流
+  const handlePaperSelectionConfirm = (paperIds: number[]) => {
+    setSelectedPaperIds(paperIds)
+    setPaperSelectionOpen(false)
     setIdeaWorkflowOpen(true)
   }
 
@@ -312,15 +321,31 @@ export default function Sidebar({
         </div>
       </div>
 
+      {/* 论文选择弹窗 */}
+      {selectedGroup && (
+        <PaperSelectionModal
+          isOpen={paperSelectionOpen}
+          groupId={selectedGroup.id}
+          groupName={selectedGroup.name}
+          onClose={() => {
+            setPaperSelectionOpen(false)
+            setSelectedGroup(null)
+          }}
+          onConfirm={handlePaperSelectionConfirm}
+        />
+      )}
+
       {/* Idea 工作流弹窗 */}
       {selectedGroup && (
         <IdeaWorkflowRunner
           isOpen={ideaWorkflowOpen}
           groupId={selectedGroup.id}
           groupName={selectedGroup.name}
+          selectedPaperIds={selectedPaperIds}
           onClose={() => {
             setIdeaWorkflowOpen(false)
             setSelectedGroup(null)
+            setSelectedPaperIds([])
           }}
         />
       )}
