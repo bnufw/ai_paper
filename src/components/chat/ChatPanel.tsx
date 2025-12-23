@@ -37,17 +37,22 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
     streamingThought,
     streamingStartTime,
     editingMessageId,
+    branches,
+    activeBranchId,
     sendMessage,
     editMessage,
     cancelEdit,
+    regenerateResponse,
     createNewConversation,
-    setCurrentConversationId,
+    switchConversation,
     deleteConversation,
     renameConversation,
     exportConversation,
     clearMessages,
     markAsAddedToNote,
-    clearError
+    clearError,
+    createBranchFromMessage,
+    switchToBranch
   } = useChat(paperId)
 
   const [inputValue, setInputValue] = useState('')
@@ -65,6 +70,9 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
     show: boolean
     position: { top: number; left: number }
   } | null>(null)
+  // 分支选择弹窗状态
+  const [showBranchSelector, setShowBranchSelector] = useState(false)
+
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -94,7 +102,7 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
     if (messagesContainerRef.current) {
       messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
     }
-  }, [messages, streamingText])
+  }, [messages, streamingText, streamingThought])
 
   const handleSend = async () => {
     if ((!inputValue.trim() && pendingImages.length === 0) || loading) return
@@ -234,6 +242,26 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
     textareaRef.current?.focus()
   }
 
+  // 处理创建分支
+  const handleCreateBranch = async (messageId: number) => {
+    try {
+      const newBranchId = await createBranchFromMessage(messageId)
+      alert(`已创建分支 ${newBranchId}，现在您可以从这里开始新的对话分支`)
+    } catch (err) {
+      alert((err as Error).message)
+    }
+  }
+
+  // 处理切换分支
+  const handleSwitchBranch = async (branchId: number) => {
+    try {
+      await switchToBranch(branchId)
+      setShowBranchSelector(false)
+    } catch (err) {
+      alert((err as Error).message)
+    }
+  }
+
   const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const items = e.clipboardData.items
     const imageFiles: File[] = []
@@ -290,25 +318,38 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
 
   return (
     <div className="h-full w-full flex flex-col bg-gray-50 overflow-hidden">
-      {/* 顶部：会话列表 + 模型名 */}
+      {/* 顶部：会话列表 + 模型名 + 分支指示器 */}
       <div className="bg-white border-b flex items-center min-w-0 overflow-hidden">
         <ConversationList
           conversations={conversations}
           currentConversationId={currentConversationId}
-          onSelect={setCurrentConversationId}
+          onSelect={switchConversation}
           onDelete={deleteConversation}
           onRename={renameConversation}
           onExport={exportConversation}
           onClear={clearMessages}
           onNewConversation={createNewConversation}
         />
-        
+
         {/* 模型名显示 */}
         <div className="flex-shrink-0 px-2 py-1.5 border-l flex items-center">
           <span className="text-xs text-gray-600 font-medium bg-blue-50 px-2 py-1 rounded whitespace-nowrap">
             {modelName}
           </span>
         </div>
+
+        {/* 分支状态指示器 */}
+        {currentConversationId && branches.length > 1 && (
+          <div className="flex-shrink-0 px-2 py-1.5 border-l flex items-center">
+            <button
+              onClick={() => setShowBranchSelector(true)}
+              className="text-xs text-gray-600 font-medium bg-green-50 px-2 py-1 rounded whitespace-nowrap hover:bg-green-100 transition-colors"
+              title="切换分支"
+            >
+              分支 {activeBranchId === 0 ? '主' : activeBranchId}/{branches.length - 1 || 1}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 消息区域 */}
@@ -450,20 +491,41 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
                       </ReactMarkdown>
                     </div>
 
-                    {/* 添加到笔记按钮 */}
-                    {!loading && localPath && (
-                      <div className="mt-2 flex justify-end">
-                        {msg.addedToNote ? (
-                          <span className="text-xs text-pink-600">✓ 已添加到笔记</span>
-                        ) : (
-                          <button
-                            onClick={() => handleAddToNote(msg.id!, msg.content)}
-                            disabled={addingToNoteId === msg.id}
-                            className="text-xs transition-colors disabled:opacity-70 text-gray-500 hover:text-blue-600"
-                            title="添加到笔记"
-                          >
-                            {addingToNoteId === msg.id ? '添加中...' : '📝 添加到笔记'}
-                          </button>
+                    {/* 操作按钮 */}
+                    {!loading && (
+                      <div className="mt-2 flex justify-end gap-3">
+                        {/* 重新生成按钮 */}
+                        <button
+                          onClick={() => regenerateResponse(msg.id!)}
+                          className="text-xs transition-colors text-gray-500 hover:text-blue-600"
+                          title="重新生成回复"
+                        >
+                          🔄 重新生成
+                        </button>
+
+                        {/* 创建分支按钮 */}
+                        <button
+                          onClick={() => handleCreateBranch(msg.id!)}
+                          className="text-xs transition-colors text-gray-500 hover:text-green-600"
+                          title="从此消息创建新的对话分支"
+                        >
+                          🔀 创建分支
+                        </button>
+
+                        {/* 添加到笔记按钮 */}
+                        {localPath && (
+                          msg.addedToNote ? (
+                            <span className="text-xs text-pink-600">✓ 已添加到笔记</span>
+                          ) : (
+                            <button
+                              onClick={() => handleAddToNote(msg.id!, msg.content)}
+                              disabled={addingToNoteId === msg.id}
+                              className="text-xs transition-colors disabled:opacity-70 text-gray-500 hover:text-blue-600"
+                              title="添加到笔记"
+                            >
+                              {addingToNoteId === msg.id ? '添加中...' : '📝 添加到笔记'}
+                            </button>
+                          )
                         )}
                       </div>
                     )}
@@ -665,6 +727,50 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
           onClose={() => setMentionPopup(null)}
           position={mentionPopup.position}
         />
+      )}
+
+      {/* 分支选择弹窗 */}
+      {showBranchSelector && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-4 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold mb-3">选择分支</h3>
+
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {branches.map((branch) => (
+                <button
+                  key={branch.branchId}
+                  onClick={() => handleSwitchBranch(branch.branchId)}
+                  className={`w-full text-left px-3 py-2 rounded-lg transition-colors ${
+                    branch.branchId === activeBranchId
+                      ? 'bg-green-100 border-2 border-green-500'
+                      : 'bg-gray-50 hover:bg-gray-100 border-2 border-transparent'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">
+                      {branch.branchId === 0 ? '主分支' : `分支 ${branch.branchId}`}
+                    </span>
+                    <span className="text-sm text-gray-500">
+                      {branch.messageCount} 条消息
+                    </span>
+                  </div>
+                  {branch.branchId === activeBranchId && (
+                    <div className="text-xs text-green-600 mt-1">✓ 当前分支</div>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setShowBranchSelector(false)}
+                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 transition-colors"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef } from 'react'
-import { db, type Message, type Conversation, type MessageImage, deleteConversation as dbDeleteConversation, renameConversation as dbRenameConversation, exportConversation as dbExportConversation, clearConversationMessages as dbClearConversationMessages, getPaperMarkdown, deleteMessagesAfter, getGeminiSettings } from '../services/storage/db'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { db, type Message, type Conversation, type MessageImage, type BranchInfo, deleteConversation as dbDeleteConversation, renameConversation as dbRenameConversation, exportConversation as dbExportConversation, clearConversationMessages as dbClearConversationMessages, getPaperMarkdown, deleteMessagesAfter, getGeminiSettings, saveMessageVersion, getConversationBranches, getActiveBranchId, createBranch, switchBranch, getBranchMessages, hasMessageBranches } from '../services/storage/db'
 import { sendMessageToGemini } from '../services/ai/geminiClient'
 import { loadDomainKnowledge } from '../services/knowledge/domainKnowledgeService'
 import { getOrCreatePaperCache, refreshCacheTTL, invalidateCache } from '../services/ai/cacheService'
+import { backgroundTaskManager } from '../services/chat/backgroundTaskManager'
 
 // 引用解析正则
 const MENTION_PATTERN = /@\[([^\]]+)\]\(paperId:(\d+)\)/g
@@ -42,17 +43,51 @@ export function useChat(paperId: number) {
   const [streamingStartTime, setStreamingStartTime] = useState<Date | null>(null)
   const [editingMessageId, setEditingMessageId] = useState<number | null>(null)
 
+  // 分支状态
+  const [branches, setBranches] = useState<BranchInfo[]>([])
+  const [activeBranchId, setActiveBranchId] = useState<number>(0)
+
   // 缓存状态
   const cacheNameRef = useRef<string | null>(null)
   const cacheInitializedRef = useRef(false)
 
-  // 刷新消息列表
+  // AbortController 用于控制 UI 回调
+  const abortControllerRef = useRef<AbortController | null>(null)
+
+  // 当前正在进行的任务上下文（用于后台任务恢复）
+  const pendingTaskContextRef = useRef<{
+    conversationId: number
+    userMessage: { content: string; images?: MessageImage[]; timestamp: Date }
+    editingId?: number
+  } | null>(null)
+
+  // 后台任务数量（用于 UI 显示）
+  const [backgroundTaskCount, setBackgroundTaskCount] = useState(0)
+
+  // 订阅后台任务变化
+  useEffect(() => {
+    const unsubscribe = backgroundTaskManager.subscribe((tasks) => {
+      const runningCount = Array.from(tasks.values()).filter(
+        t => t.paperId === paperId && t.status === 'running'
+      ).length
+      setBackgroundTaskCount(runningCount)
+    })
+    return unsubscribe
+  }, [paperId])
+
+  // 刷新消息列表（使用分支过滤）
   const refreshMessages = async (conversationId: number) => {
-    const msgs = await db.messages
-      .where('conversationId')
-      .equals(conversationId)
-      .sortBy('timestamp')
+    const branchId = activeBranchId
+    const msgs = await getBranchMessages(conversationId, branchId)
     setMessages(msgs)
+  }
+
+  // 加载分支信息
+  const loadBranches = async (conversationId: number) => {
+    const branchList = await getConversationBranches(conversationId)
+    const currentBranchId = await getActiveBranchId(conversationId)
+    setBranches(branchList)
+    setActiveBranchId(currentBranchId)
   }
 
   // 准备对话（获取或创建）
@@ -108,28 +143,32 @@ export function useChat(paperId: number) {
     loadConversations()
   }, [paperId, currentConversationId])
 
-  // 加载当前对话的消息
+  // 加载当前对话的消息和分支信息
   useEffect(() => {
     if (!currentConversationId) {
       setMessages([])
       setLastClearAt(null)
+      setBranches([])
+      setActiveBranchId(0)
       return
     }
 
-    async function loadMessages() {
-      // 加载对话信息（获取 lastClearAt）
+    async function loadMessagesAndBranches() {
+      // 加载对话信息（获取 lastClearAt 和分支信息）
       const conv = await db.conversations.get(currentConversationId!)
       setLastClearAt(conv?.lastClearAt || null)
 
-      const msgs = await db.messages
-        .where('conversationId')
-        .equals(currentConversationId!)
-        .sortBy('timestamp')
+      // 加载分支信息
+      await loadBranches(currentConversationId!)
+
+      // 加载当前分支的消息
+      const currentBranchId = await getActiveBranchId(currentConversationId!)
+      const msgs = await getBranchMessages(currentConversationId!, currentBranchId)
 
       setMessages(msgs)
     }
 
-    loadMessages()
+    loadMessagesAndBranches()
   }, [currentConversationId])
 
   /**
@@ -235,6 +274,14 @@ export function useChat(paperId: number) {
   const sendMessage = async (content: string, images?: MessageImage[], editingId?: number) => {
     if (!content.trim() && (!images || images.length === 0)) return
 
+    // 中止之前的 UI 回调（如果有）
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+    // 创建新的 AbortController
+    const abortController = new AbortController()
+    abortControllerRef.current = abortController
+
     // 立即更新UI状态，让用户感知到响应
     setLoading(true)
     setError('')
@@ -327,13 +374,22 @@ export function useChat(paperId: number) {
 
       // 异步保存用户消息（不阻塞API调用）
       const userTimestamp = new Date()
+
+      // 记录任务上下文（用于后台任务恢复）
+      pendingTaskContextRef.current = {
+        conversationId,
+        userMessage: { content, images, timestamp: userTimestamp },
+        editingId
+      }
+
       const saveUserMessagePromise = !editingId
         ? db.messages.add({
             conversationId,
             role: 'user',
             content,
             images,
-            timestamp: userTimestamp
+            timestamp: userTimestamp,
+            branchId: activeBranchId
           }).then(() => refreshMessages(conversationId))
         : Promise.resolve()
 
@@ -344,7 +400,8 @@ export function useChat(paperId: number) {
           role: 'user',
           content,
           images,
-          timestamp: userTimestamp
+          timestamp: userTimestamp,
+          branchId: activeBranchId
         } as Message])
       }
 
@@ -378,7 +435,9 @@ export function useChat(paperId: number) {
           (text) => setStreamingText(text),
           (thought) => setStreamingThought(thought),
           () => {}, // 已经提前设置了startTime
-          cacheName
+          cacheName,
+          5,
+          abortController.signal
         )
       } catch (err: any) {
         // 检查是否为缓存错误，如果是则失效缓存并用传统模式重试
@@ -399,7 +458,9 @@ export function useChat(paperId: number) {
             (text) => setStreamingText(text),
             (thought) => setStreamingThought(thought),
             () => {},
-            null
+            null,
+            5,
+            abortController.signal
           )
         } else {
           throw err
@@ -409,10 +470,16 @@ export function useChat(paperId: number) {
       // 确保用户消息已保存
       await saveUserMessagePromise
 
-      // 清空流式文本和时间
-      setStreamingText('')
-      setStreamingThought('')
-      setStreamingStartTime(null)
+      // 检查是否已被中止（用户切换了对话）
+      const isAborted = abortController.signal.aborted
+      const isBackgroundTask = backgroundTaskManager.hasRunningTask(conversationId)
+
+      // 清空流式文本和时间（仅在未中止时更新 UI）
+      if (!isAborted) {
+        setStreamingText('')
+        setStreamingThought('')
+        setStreamingStartTime(null)
+      }
 
       // AI调用成功后，如果是编辑模式，先删除旧消息再保存新消息
       if (editingId) {
@@ -423,7 +490,8 @@ export function useChat(paperId: number) {
           role: 'user',
           content,
           images,
-          timestamp: userTimestamp
+          timestamp: userTimestamp,
+          branchId: activeBranchId
         })
       }
 
@@ -438,7 +506,8 @@ export function useChat(paperId: number) {
         generationStartTime: result.generationStartTime,
         generationEndTime: result.generationEndTime,
         groundingMetadata: result.groundingMetadata,
-        webSearchQueries: result.webSearchQueries
+        webSearchQueries: result.webSearchQueries,
+        branchId: activeBranchId
       })
 
       // 更新对话
@@ -446,35 +515,67 @@ export function useChat(paperId: number) {
         updatedAt: new Date()
       })
 
-      // 刷新对话列表（确保自动命名后标题更新到UI）
-      const updatedConvs = await db.conversations
-        .where('paperId')
-        .equals(paperId)
-        .reverse()
-        .sortBy('createdAt')
-      setConversations(updatedConvs)
-
-      // 刷新消息列表
-      const finalMessages = await db.messages
-        .where('conversationId')
-        .equals(conversationId)
-        .sortBy('timestamp')
-
-      setMessages(finalMessages)
-
-      // 清除编辑状态
-      if (editingId) {
-        setEditingMessageId(null)
+      // 如果是后台任务，标记完成并移除
+      if (isBackgroundTask) {
+        backgroundTaskManager.completeTask(conversationId, result)
+        backgroundTaskManager.removeTask(conversationId)
+        console.log(`[Chat] 后台任务完成: 对话 ${conversationId}`)
       }
 
+      // 仅在未中止时更新 UI
+      if (!isAborted) {
+        // 刷新对话列表（确保自动命名后标题更新到UI）
+        const updatedConvs = await db.conversations
+          .where('paperId')
+          .equals(paperId)
+          .reverse()
+          .sortBy('createdAt')
+        setConversations(updatedConvs)
+
+        // 刷新消息列表
+        const finalMessages = await db.messages
+          .where('conversationId')
+          .equals(conversationId)
+          .sortBy('timestamp')
+
+        setMessages(finalMessages)
+
+        // 清除编辑状态
+        if (editingId) {
+          setEditingMessageId(null)
+        }
+      }
+
+      // 清除任务上下文
+      pendingTaskContextRef.current = null
+
     } catch (err) {
-      console.error('发送消息失败:', err)
-      setError((err as Error).message)
-      setStreamingText('')
-      setStreamingThought('')
-      setStreamingStartTime(null)
+      const isAborted = abortController.signal.aborted
+      const taskContext = pendingTaskContextRef.current
+      const isBackgroundTask = taskContext && backgroundTaskManager.hasRunningTask(taskContext.conversationId)
+
+      // 如果是后台任务失败，标记失败
+      if (isBackgroundTask && taskContext) {
+        backgroundTaskManager.failTask(taskContext.conversationId, (err as Error).message)
+        backgroundTaskManager.removeTask(taskContext.conversationId)
+      }
+
+      // 仅在未中止时更新 UI
+      if (!isAborted) {
+        console.error('发送消息失败:', err)
+        setError((err as Error).message)
+        setStreamingText('')
+        setStreamingThought('')
+        setStreamingStartTime(null)
+      }
+
+      // 清除任务上下文
+      pendingTaskContextRef.current = null
     } finally {
-      setLoading(false)
+      // 仅在未中止时更新 loading 状态
+      if (!abortController.signal.aborted) {
+        setLoading(false)
+      }
     }
   }
 
@@ -501,6 +602,201 @@ export function useChat(paperId: number) {
   }
 
   /**
+   * 重新生成 AI 回复
+   * 保留用户消息，只重新生成 AI 回复，并保存历史版本
+   */
+  const regenerateResponse = async (aiMessageId: number) => {
+    if (loading) return
+
+    // 查找 AI 消息
+    const aiMessage = messages.find(m => m.id === aiMessageId)
+    if (!aiMessage || aiMessage.role !== 'assistant') {
+      setError('只能重新生成 AI 回复')
+      return
+    }
+
+    // 查找对应的用户消息（前一条消息）
+    const aiIndex = messages.findIndex(m => m.id === aiMessageId)
+    if (aiIndex < 1) {
+      setError('未找到对应的用户消息')
+      return
+    }
+
+    const userMessage = messages[aiIndex - 1]
+    if (!userMessage || userMessage.role !== 'user') {
+      setError('未找到对应的用户消息')
+      return
+    }
+
+    // 保存当前 AI 回复到版本历史
+    try {
+      await saveMessageVersion(aiMessage)
+    } catch (err) {
+      console.error('保存版本历史失败:', err)
+      // 继续执行，版本保存失败不阻塞重新生成
+    }
+
+    // 中止之前的 UI 回调
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+    const abortController = new AbortController()
+    abortControllerRef.current = abortController
+
+    setLoading(true)
+    setError('')
+    setStreamingText('')
+    setStreamingThought('')
+    setStreamingStartTime(new Date())
+
+    try {
+      // 解析引用
+      const content = userMessage.content
+      const mentions = parseMentions(content)
+      const hasDomainKnowledgeRef = DOMAIN_KNOWLEDGE_PATTERN.test(content)
+
+      // 并行获取数据
+      const [paper, mentionContents, domainKnowledge] = await Promise.all([
+        db.papers.get(paperId),
+        mentions.length > 0
+          ? Promise.all(mentions.map(async (m) => {
+              try {
+                const markdown = await getPaperMarkdown(m.paperId)
+                return `\n\n[引用论文: ${m.title}]\n${markdown}\n[/引用论文]\n`
+              } catch (err) {
+                return `\n\n[引用论文: ${m.title}]\n[无法读取论文内容]\n[/引用论文]\n`
+              }
+            }))
+          : Promise.resolve([]),
+        hasDomainKnowledgeRef
+          ? (async () => {
+              const p = await db.papers.get(paperId)
+              if (p?.groupId) {
+                const group = await db.groups.get(p.groupId)
+                if (group) {
+                  return await loadDomainKnowledge(group.name)
+                }
+              }
+              return null
+            })()
+          : Promise.resolve(null)
+      ])
+
+      if (!paper) {
+        throw new Error('论文不存在')
+      }
+
+      // 构建上下文
+      let contextWithMentions = paper.markdown
+      if (domainKnowledge) {
+        contextWithMentions += `\n\n---\n## 领域知识\n${domainKnowledge}\n---`
+      }
+      if (mentionContents.length > 0) {
+        contextWithMentions += mentionContents.join('')
+      }
+
+      // 构建历史消息（不包括当前 AI 回复）
+      let messagesForHistory = messages.slice(0, aiIndex)
+      if (lastClearAt) {
+        messagesForHistory = messagesForHistory.filter(m => m.timestamp > lastClearAt)
+      }
+      // 移除当前用户消息（将作为新问题发送）
+      messagesForHistory = messagesForHistory.slice(0, -1)
+
+      const history = messagesForHistory.slice(-20).map(msg => ({
+        role: msg.role,
+        content: msg.content
+      }))
+
+      // 获取缓存
+      const hasExtraContext = mentionContents.length > 0 || domainKnowledge
+      let cacheName: string | null = null
+
+      if (!hasExtraContext && cacheNameRef.current) {
+        cacheName = cacheNameRef.current
+      }
+
+      // 调用 AI
+      let result
+      try {
+        result = await sendMessageToGemini(
+          contextWithMentions,
+          content,
+          history,
+          userMessage.images,
+          (text) => !abortController.signal.aborted && setStreamingText(text),
+          (thought) => !abortController.signal.aborted && setStreamingThought(thought),
+          () => {},
+          cacheName,
+          5,
+          abortController.signal
+        )
+      } catch (err: any) {
+        if (err.isCacheError && cacheName) {
+          await invalidateCache(paperId)
+          cacheNameRef.current = null
+          setStreamingText('')
+          setStreamingThought('')
+          result = await sendMessageToGemini(
+            contextWithMentions,
+            content,
+            history,
+            userMessage.images,
+            (text) => !abortController.signal.aborted && setStreamingText(text),
+            (thought) => !abortController.signal.aborted && setStreamingThought(thought),
+            () => {},
+            null,
+            5,
+            abortController.signal
+          )
+        } else {
+          throw err
+        }
+      }
+
+      // 检查是否中止
+      if (abortController.signal.aborted) {
+        return
+      }
+
+      setStreamingText('')
+      setStreamingThought('')
+      setStreamingStartTime(null)
+
+      // 更新 AI 消息
+      await db.messages.update(aiMessageId, {
+        content: result.content,
+        timestamp: new Date(),
+        thoughts: result.thoughts,
+        thinkingTimeMs: result.thinkingTimeMs,
+        generationStartTime: result.generationStartTime,
+        generationEndTime: result.generationEndTime,
+        groundingMetadata: result.groundingMetadata,
+        webSearchQueries: result.webSearchQueries,
+        addedToNote: false  // 重置已添加到笔记状态
+      })
+
+      // 刷新消息列表
+      if (currentConversationId) {
+        await refreshMessages(currentConversationId)
+      }
+
+    } catch (err) {
+      if (!abortController.signal.aborted) {
+        console.error('重新生成失败:', err)
+        setError((err as Error).message)
+        setStreamingText('')
+        setStreamingThought('')
+        setStreamingStartTime(null)
+      }
+    } finally {
+      if (!abortController.signal.aborted) {
+        setLoading(false)
+      }
+    }
+  }
+
+  /**
    * 标记消息已添加到笔记（更新本地状态）
    */
   const markAsAddedToNote = (messageId: number) => {
@@ -516,6 +812,97 @@ export function useChat(paperId: number) {
     if (!currentConversationId) return
     const clearTime = await dbClearConversationMessages(currentConversationId)
     setLastClearAt(clearTime)
+  }
+
+  /**
+   * 切换对话（处理后台任务逻辑）
+   */
+  const switchConversation = useCallback((newConversationId: number | null) => {
+    // 如果有正在进行的请求，注册为后台任务
+    if (loading && currentConversationId && pendingTaskContextRef.current) {
+      const taskContext = pendingTaskContextRef.current
+      backgroundTaskManager.registerTask(
+        currentConversationId,
+        paperId,
+        {
+          userMessage: taskContext.userMessage,
+          editingId: taskContext.editingId
+        }
+      )
+      console.log(`[Chat] 对话 ${currentConversationId} 转入后台继续`)
+    }
+
+    // 中止 UI 回调（不会中断 API 请求）
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+    }
+
+    // 清空当前 UI 状态
+    setLoading(false)
+    setError('')
+    setStreamingText('')
+    setStreamingThought('')
+    setStreamingStartTime(null)
+    pendingTaskContextRef.current = null
+
+    // 切换对话
+    setCurrentConversationId(newConversationId)
+  }, [loading, currentConversationId, paperId])
+
+  /**
+   * 从指定消息创建新分支
+   */
+  const createBranchFromMessage = async (messageId: number) => {
+    if (!currentConversationId) {
+      throw new Error('没有活跃的对话')
+    }
+
+    try {
+      // 创建新分支
+      const newBranchId = await createBranch(currentConversationId, messageId)
+
+      // 刷新分支列表和消息
+      await loadBranches(currentConversationId)
+      await refreshMessages(currentConversationId)
+
+      return newBranchId
+    } catch (err) {
+      console.error('创建分支失败:', err)
+      throw new Error('创建分支失败')
+    }
+  }
+
+  /**
+   * 切换到指定分支
+   */
+  const switchToBranch = async (branchId: number) => {
+    if (!currentConversationId) {
+      throw new Error('没有活跃的对话')
+    }
+
+    try {
+      // 切换数据库中的活跃分支
+      await switchBranch(currentConversationId, branchId)
+
+      // 更新本地状态
+      setActiveBranchId(branchId)
+
+      // 加载该分支的消息
+      const msgs = await getBranchMessages(currentConversationId, branchId)
+      setMessages(msgs)
+    } catch (err) {
+      console.error('切换分支失败:', err)
+      throw new Error('切换分支失败')
+    }
+  }
+
+  /**
+   * 检查消息是否有分支
+   */
+  const checkMessageHasBranches = async (messageId: number): Promise<boolean> => {
+    if (!currentConversationId) return false
+    return await hasMessageBranches(currentConversationId, messageId)
   }
 
   /**
@@ -536,16 +923,23 @@ export function useChat(paperId: number) {
     streamingThought,
     streamingStartTime,
     editingMessageId,
+    backgroundTaskCount,
+    branches,
+    activeBranchId,
     sendMessage,
     editMessage,
     cancelEdit,
+    regenerateResponse,
     createNewConversation,
-    setCurrentConversationId,
+    switchConversation,
     deleteConversation,
     renameConversation,
     exportConversation,
     clearMessages,
     markAsAddedToNote,
-    clearError
+    clearError,
+    createBranchFromMessage,
+    switchToBranch,
+    checkMessageHasBranches
   }
 }

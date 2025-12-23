@@ -46,6 +46,9 @@ export interface Conversation {
   createdAt: Date
   updatedAt: Date
   lastClearAt?: Date  // 上下文清除时间点，发消息时只取此时间之后的历史
+  // 分支功能
+  activeBranchId?: number  // 当前活跃分支 ID（0 = 主分支）
+  branchCount?: number     // 分支总数（用于生成新分支 ID）
 }
 
 // 消息图片类型
@@ -71,6 +74,19 @@ export interface Message {
   groundingMetadata?: any
   webSearchQueries?: string[]
   addedToNote?: boolean
+  // 分支功能
+  branchId?: number         // 所属分支 ID（0 = 主分支，undefined 视为 0）
+  parentMessageId?: number  // 分支起点消息 ID（仅分支的第一条消息有值）
+}
+
+// 消息版本历史类型（用于重新生成功能）
+export interface MessageVersion {
+  id?: number
+  messageId: number       // 原消息 ID
+  content: string         // 保存的内容
+  thoughts?: string       // 保存的思考过程
+  thinkingTimeMs?: number
+  timestamp: Date         // 生成时间
 }
 
 // Idea 对话消息类型
@@ -112,6 +128,7 @@ class PaperReaderDatabase extends Dexie {
   images!: Table<PaperImage, number>
   conversations!: Table<Conversation, number>
   messages!: Table<Message, number>
+  messageVersions!: Table<MessageVersion, number>  // 消息版本历史
   settings!: Table<Settings, string>
   ideaSessions!: Table<IdeaSession, number>
   ideaMessages!: Table<IdeaMessage, number>  // 新增：Idea 对话消息
@@ -173,6 +190,36 @@ class PaperReaderDatabase extends Dexie {
       ideaMessages: '++id, sessionId, timestamp'
     }).upgrade(() => {
       console.log('[DB] 升级数据库到版本 6，新增 ideaMessages 表')
+    })
+
+    // v7: 新增消息版本历史表（用于重新生成功能）
+    this.version(7).stores({
+      groups: '++id, createdAt',
+      papers: '++id, groupId, createdAt',
+      images: '++id, paperId, imageIndex',
+      conversations: '++id, paperId, createdAt',
+      messages: '++id, conversationId, timestamp',
+      messageVersions: '++id, messageId, timestamp',
+      settings: 'key',
+      ideaSessions: '++id, groupId, timestamp, status, createdAt',
+      ideaMessages: '++id, sessionId, timestamp'
+    }).upgrade(() => {
+      console.log('[DB] 升级数据库到版本 7，新增 messageVersions 表')
+    })
+
+    // v8: 添加消息分支索引
+    this.version(8).stores({
+      groups: '++id, createdAt',
+      papers: '++id, groupId, createdAt',
+      images: '++id, paperId, imageIndex',
+      conversations: '++id, paperId, createdAt',
+      messages: '++id, conversationId, timestamp, branchId',
+      messageVersions: '++id, messageId, timestamp',
+      settings: 'key',
+      ideaSessions: '++id, groupId, timestamp, status, createdAt',
+      ideaMessages: '++id, sessionId, timestamp'
+    }).upgrade(() => {
+      console.log('[DB] 升级数据库到版本 8，添加消息分支索引')
     })
   }
 }
@@ -868,4 +915,219 @@ export async function exportIdeaChat(sessionId: number): Promise<string> {
   }
 
   return lines.join('\n')
+}
+
+// ========== 消息版本历史函数 ==========
+
+/**
+ * 保存消息版本（在重新生成前调用）
+ */
+export async function saveMessageVersion(message: Message): Promise<number> {
+  const version: Omit<MessageVersion, 'id'> = {
+    messageId: message.id!,
+    content: message.content,
+    thoughts: message.thoughts,
+    thinkingTimeMs: message.thinkingTimeMs,
+    timestamp: message.timestamp
+  }
+  return await db.messageVersions.add(version as MessageVersion)
+}
+
+/**
+ * 获取消息的所有历史版本
+ */
+export async function getMessageVersions(messageId: number): Promise<MessageVersion[]> {
+  return db.messageVersions
+    .where('messageId')
+    .equals(messageId)
+    .sortBy('timestamp')
+}
+
+/**
+ * 获取消息的版本数量
+ */
+export async function getMessageVersionCount(messageId: number): Promise<number> {
+  return db.messageVersions
+    .where('messageId')
+    .equals(messageId)
+    .count()
+}
+
+/**
+ * 删除消息的所有历史版本（当消息被删除时调用）
+ */
+export async function deleteMessageVersions(messageId: number): Promise<void> {
+  await db.messageVersions.where('messageId').equals(messageId).delete()
+}
+
+// ========== 分支功能函数 ==========
+
+/**
+ * 分支信息
+ */
+export interface BranchInfo {
+  branchId: number
+  parentMessageId?: number  // 分支起点消息 ID
+  messageCount: number      // 分支中的消息数量
+}
+
+/**
+ * 获取对话的所有分支信息
+ */
+export async function getConversationBranches(conversationId: number): Promise<BranchInfo[]> {
+  const messages = await db.messages
+    .where('conversationId')
+    .equals(conversationId)
+    .toArray()
+
+  // 统计每个分支的消息数量
+  const branchMap = new Map<number, { parentMessageId?: number; count: number }>()
+
+  for (const msg of messages) {
+    const branchId = msg.branchId ?? 0
+    const existing = branchMap.get(branchId)
+    if (existing) {
+      existing.count++
+    } else {
+      branchMap.set(branchId, {
+        parentMessageId: msg.parentMessageId,
+        count: 1
+      })
+    }
+  }
+
+  return Array.from(branchMap.entries()).map(([branchId, info]) => ({
+    branchId,
+    parentMessageId: info.parentMessageId,
+    messageCount: info.count
+  })).sort((a, b) => a.branchId - b.branchId)
+}
+
+/**
+ * 创建新分支
+ * 从指定消息位置创建一个新分支，返回新分支 ID
+ * parentMessageId 用于记录分支起点，调用者需在新消息中设置此值
+ */
+export async function createBranch(
+  conversationId: number,
+  _parentMessageId: number
+): Promise<number> {
+  // 获取当前对话
+  const conversation = await db.conversations.get(conversationId)
+  if (!conversation) {
+    throw new Error('对话不存在')
+  }
+
+  // 计算新分支 ID
+  const newBranchId = (conversation.branchCount ?? 0) + 1
+
+  // 更新对话的分支计数和活跃分支
+  await db.conversations.update(conversationId, {
+    branchCount: newBranchId,
+    activeBranchId: newBranchId
+  })
+
+  return newBranchId
+}
+
+/**
+ * 切换活跃分支
+ */
+export async function switchBranch(
+  conversationId: number,
+  branchId: number
+): Promise<void> {
+  await db.conversations.update(conversationId, {
+    activeBranchId: branchId
+  })
+}
+
+/**
+ * 获取指定分支的消息
+ * 如果是非主分支，会包含主分支到分支起点的消息 + 分支本身的消息
+ */
+export async function getBranchMessages(
+  conversationId: number,
+  branchId: number
+): Promise<Message[]> {
+  const allMessages = await db.messages
+    .where('conversationId')
+    .equals(conversationId)
+    .sortBy('timestamp')
+
+  if (branchId === 0) {
+    // 主分支：只返回 branchId 为 0 或 undefined 的消息
+    return allMessages.filter(m => !m.branchId || m.branchId === 0)
+  }
+
+  // 非主分支：找到分支起点，返回主分支到起点 + 分支消息
+  const branchMessages = allMessages.filter(m => m.branchId === branchId)
+  if (branchMessages.length === 0) {
+    return []
+  }
+
+  // 找到分支起点（第一条消息的 parentMessageId）
+  const firstBranchMessage = branchMessages[0]
+  const parentMessageId = firstBranchMessage.parentMessageId
+
+  if (!parentMessageId) {
+    // 如果没有父消息，只返回分支消息
+    return branchMessages
+  }
+
+  // 获取主分支消息直到父消息（包含父消息）
+  const mainBranchMessages = allMessages.filter(m => {
+    if (m.branchId && m.branchId !== 0) return false
+    return m.timestamp <= (allMessages.find(x => x.id === parentMessageId)?.timestamp ?? 0)
+  })
+
+  return [...mainBranchMessages, ...branchMessages]
+}
+
+/**
+ * 获取对话当前活跃分支 ID
+ */
+export async function getActiveBranchId(conversationId: number): Promise<number> {
+  const conversation = await db.conversations.get(conversationId)
+  return conversation?.activeBranchId ?? 0
+}
+
+/**
+ * 检查消息是否有分支
+ */
+export async function hasMessageBranches(
+  conversationId: number,
+  messageId: number
+): Promise<boolean> {
+  // 查找以此消息为父消息的分支消息
+  const branchMessages = await db.messages
+    .where('conversationId')
+    .equals(conversationId)
+    .filter(m => m.parentMessageId === messageId)
+    .toArray()
+
+  return branchMessages.length > 0
+}
+
+/**
+ * 获取从指定消息分出的所有分支 ID
+ */
+export async function getBranchesFromMessage(
+  conversationId: number,
+  messageId: number
+): Promise<number[]> {
+  const branchMessages = await db.messages
+    .where('conversationId')
+    .equals(conversationId)
+    .filter(m => m.parentMessageId === messageId)
+    .toArray()
+
+  const branchIds = new Set<number>()
+  for (const msg of branchMessages) {
+    if (msg.branchId) {
+      branchIds.add(msg.branchId)
+    }
+  }
+
+  return Array.from(branchIds).sort((a, b) => a - b)
 }

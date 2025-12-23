@@ -14,6 +14,7 @@ import {
   loadSessionIdeas,
   evaluateCrossSessionIdeas
 } from '../services/idea/crossSessionService'
+import type { IdeaEntry } from '../services/idea/workflowStorage'
 
 export function useCrossSessionEvaluation() {
   const [state, setState] = useState<CrossSessionEvaluationState>({
@@ -27,7 +28,7 @@ export function useCrossSessionEvaluation() {
   const [availableSessions, setAvailableSessions] = useState<IdeaSession[]>([])
   const [sessionIdeasCache, setSessionIdeasCache] = useState<Map<number, {
     bestIdea: string | null
-    allIdeas: Map<string, string>
+    allIdeas: IdeaEntry[]
   }>>(new Map())
   const [loadingSessions, setLoadingSessions] = useState(false)
 
@@ -56,7 +57,7 @@ export function useCrossSessionEvaluation() {
     }
 
     const session = availableSessions.find(s => s.id === sessionId)
-    if (!session) return { bestIdea: null, allIdeas: new Map<string, string>() }
+    if (!session) return { bestIdea: null, allIdeas: [] as IdeaEntry[] }
 
     try {
       const data = await loadSessionIdeas(session)
@@ -64,7 +65,7 @@ export function useCrossSessionEvaluation() {
       return data
     } catch (err) {
       console.error('加载会话 Ideas 失败:', err)
-      return { bestIdea: null, allIdeas: new Map<string, string>() }
+      return { bestIdea: null, allIdeas: [] as IdeaEntry[] }
     }
   }, [availableSessions, sessionIdeasCache])
 

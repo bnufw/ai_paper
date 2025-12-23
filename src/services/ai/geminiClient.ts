@@ -42,6 +42,7 @@ function delay(ms: number): Promise<void> {
  * @param onGenerationStart 生成开始回调
  * @param cachedContentName 缓存内容名称（优先使用缓存）
  * @param maxRetries 最大重试次数（默认5次）
+ * @param signal 可选的 AbortSignal，用于取消回调更新（不会中断 API 请求）
  * @returns AI回复及元数据
  */
 export async function sendMessageToGemini(
@@ -53,7 +54,8 @@ export async function sendMessageToGemini(
   onThought?: (thought: string) => void,
   onGenerationStart?: (startTime: Date) => void,
   cachedContentName?: string | null,
-  maxRetries: number = 5
+  maxRetries: number = 5,
+  signal?: AbortSignal
 ): Promise<{
   content: string
   thoughts?: string
@@ -209,6 +211,9 @@ export async function sendMessageToGemini(
           let streamWebSearchQueries: string[] = []
 
           for await (const chunk of stream) {
+            // 检查是否已取消（仅停止 UI 更新，不中断流消费）
+            const isAborted = signal?.aborted
+
             const candidate = chunk.candidates?.[0]
 
             if (candidate) {
@@ -223,14 +228,16 @@ export async function sendMessageToGemini(
                 for (const part of candidate.content.parts) {
                   if (part.thought) {
                     streamThoughts += part.text || ''
-                    if (onThought) {
+                    if (onThought && !isAborted) {
                       onThought(streamThoughts)
                     }
                     streamThinkingEndTime = Date.now()
                   } else {
                     const chunkText = part.text || ''
                     streamFullText += chunkText
-                    onStream(streamFullText)
+                    if (!isAborted) {
+                      onStream(streamFullText)
+                    }
                   }
                 }
               }

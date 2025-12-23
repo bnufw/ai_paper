@@ -9,6 +9,7 @@ import remarkGfm from 'remark-gfm'
 import rehypeKatex from 'rehype-katex'
 import { useCrossSessionEvaluation } from '../../hooks/useCrossSessionEvaluation'
 import type { IdeaSession } from '../../types/idea'
+import type { IdeaEntry } from '../../services/idea/workflowStorage'
 
 interface Props {
   isOpen: boolean
@@ -36,7 +37,7 @@ export default function CrossSessionEvaluator({ isOpen, onClose }: Props) {
   const [expandedSession, setExpandedSession] = useState<number | null>(null)
   const [sessionIdeas, setSessionIdeas] = useState<Map<number, {
     bestIdea: string | null
-    allIdeas: Map<string, string>
+    allIdeas: IdeaEntry[]
   }>>(new Map())
   const [loadingSession, setLoadingSession] = useState<number | null>(null)
 
@@ -164,12 +165,12 @@ export default function CrossSessionEvaluator({ isOpen, onClose }: Props) {
                             )}
 
                             {/* 其他 Ideas */}
-                            {Array.from(sessionIdeas.get(session.id!)?.allIdeas.keys() || []).map(slug => (
+                            {(sessionIdeas.get(session.id!)?.allIdeas || []).map(idea => (
                               <IdeaCheckbox
-                                key={slug}
-                                label={slug}
-                                checked={isIdeaSelected(session.id!, slug)}
-                                onChange={() => handleSelectIdea(session, slug, slug)}
+                                key={idea.slug}
+                                label={idea.slug}
+                                checked={isIdeaSelected(session.id!, idea.slug)}
+                                onChange={() => handleSelectIdea(session, idea.slug, idea.slug)}
                               />
                             ))}
                           </>

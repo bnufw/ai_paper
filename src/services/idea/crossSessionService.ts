@@ -3,7 +3,7 @@
  */
 
 import { db, getAllIdeaSessions, getIdeaWorkflowConfig } from '../storage/db'
-import { getSessionDirectory, readBestIdea, readAllIdeas } from './workflowStorage'
+import { getSessionDirectory, readBestIdea, readAllIdeas, type IdeaEntry } from './workflowStorage'
 import { callLLM, buildLLMRequest, isValidResponse } from '../ai/llmService'
 import type {
   IdeaSession,
@@ -24,7 +24,7 @@ export async function getAvailableSessions(): Promise<IdeaSession[]> {
  */
 export async function loadSessionIdeas(session: IdeaSession): Promise<{
   bestIdea: string | null
-  allIdeas: Map<string, string>
+  allIdeas: IdeaEntry[]
 }> {
   const sessionDir = await getSessionDirectory(session.localPath)
   if (!sessionDir) {
@@ -75,7 +75,8 @@ export async function loadSelectedIdeasContent(
         if (idea.ideaSlug === 'best_idea') {
           content = bestIdea || '[内容为空]'
         } else {
-          content = allIdeas.get(idea.ideaSlug) || '[内容为空]'
+          const found = allIdeas.find(i => i.slug === idea.ideaSlug)
+          content = found?.content || '[内容为空]'
         }
 
         loadedIdeas.push({ ...idea, content })
