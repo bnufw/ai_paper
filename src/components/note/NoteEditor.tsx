@@ -43,14 +43,14 @@ export default function NoteEditor({ content, onChange, onSave, mode }: NoteEdit
   }, [content, onSave])
 
   return (
-    <div className="flex flex-col h-full bg-white min-w-0">
+    <div className="flex flex-col h-full bg-gray-50 min-w-0">
       {/* 内容区域 */}
       <div className="flex-1 overflow-hidden min-w-0">
         {mode === 'edit' ? (
           <textarea
             value={content}
             onChange={(e) => onChange(e.target.value)}
-            className="w-full h-full p-4 font-mono text-sm resize-none focus:outline-none text-gray-900"
+            className="w-full h-full p-4 font-mono text-sm resize-none focus:outline-none bg-transparent text-gray-800"
             placeholder="在此编写笔记..."
           />
         ) : (
