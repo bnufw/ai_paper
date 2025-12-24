@@ -26,6 +26,7 @@ interface SidebarProps {
   onOpenSettings: () => void
   collapsed: boolean
   onToggleCollapse: () => void
+  refreshTrigger?: number
 }
 
 export default function Sidebar({
@@ -36,7 +37,8 @@ export default function Sidebar({
   onNewPaper,
   onOpenSettings,
   collapsed,
-  onToggleCollapse
+  onToggleCollapse,
+  refreshTrigger
 }: SidebarProps) {
   const [papers, setPapers] = useState<Paper[]>([])
   const [groups, setGroups] = useState<PaperGroup[]>([])
@@ -62,6 +64,13 @@ export default function Sidebar({
   useEffect(() => {
     loadData()
   }, [])
+
+  // 监听 refreshTrigger 变化，重新加载数据
+  useEffect(() => {
+    if (refreshTrigger !== undefined && refreshTrigger > 0) {
+      loadData()
+    }
+  }, [refreshTrigger])
 
   // 删除论文
   const handleDelete = async (paperId: number) => {

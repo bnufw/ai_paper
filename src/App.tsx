@@ -27,6 +27,7 @@ function App() {
   const [noteMode, setNoteMode] = useState<'edit' | 'preview'>('edit')
   const [currentPaperLocalPath, setCurrentPaperLocalPath] = useState<string | undefined>(undefined)
   const [noteVersion, setNoteVersion] = useState(0)
+  const [paperListVersion, setPaperListVersion] = useState(0)
   const [isOrganizing, setIsOrganizing] = useState(false)
   const [isGeneratingNote, setIsGeneratingNote] = useState(false)
 
@@ -120,6 +121,7 @@ function App() {
   const handleUploadComplete = async (paperId: number) => {
     setCurrentPaperId(paperId)
     setShowUploader(false)
+    setPaperListVersion(v => v + 1)
     const paper = await db.papers.get(paperId)
     setCurrentPaperLocalPath(paper?.localPath)
   }
@@ -136,6 +138,7 @@ function App() {
         onOpenSettings={() => setShowSettings(true)}
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+        refreshTrigger={paperListVersion}
       />
 
       {/* Main Content */}
