@@ -6,8 +6,9 @@ import rehypeKatex from 'rehype-katex'
 import rehypeHighlight from 'rehype-highlight'
 import ThinkingTimer from '../chat/ThinkingTimer'
 import IdeaPaperMentionPopup, { type IdeaPaperMentionPopupRef } from './IdeaPaperMentionPopup'
+import IdeaConversationList from './IdeaConversationList'
 import type { IdeaSession } from '../../types/idea'
-import type { IdeaMessage, Paper } from '../../services/storage/db'
+import type { IdeaMessage, IdeaConversation, Paper } from '../../services/storage/db'
 import { exportIdeaChatToFile } from '../../services/idea/workflowStorage'
 
 import 'katex/dist/katex.min.css'
@@ -16,6 +17,8 @@ import 'highlight.js/styles/github-dark.css'
 interface IdeaChatPanelProps {
   session: IdeaSession | null
   messages: IdeaMessage[]
+  conversations: IdeaConversation[]
+  currentConversationId: number | null
   loading: boolean
   error: string
   streamingText: string
@@ -25,15 +28,17 @@ interface IdeaChatPanelProps {
   onClearMessages: () => void
   onBack: () => void
   onClearError?: () => void
+  onNewConversation: () => void
+  onSwitchConversation: (id: number) => void
+  onDeleteConversation: (id: number) => void
+  onRenameConversation: (id: number, newTitle: string) => void
 }
 
-/**
- * Idea 对话面板
- * 提供与 best_idea 相关的 AI 对话功能
- */
 export default function IdeaChatPanel({
   session,
   messages,
+  conversations,
+  currentConversationId,
   loading,
   error,
   streamingText,
@@ -42,7 +47,11 @@ export default function IdeaChatPanel({
   onSendMessage,
   onClearMessages,
   onBack,
-  onClearError
+  onClearError,
+  onNewConversation,
+  onSwitchConversation,
+  onDeleteConversation,
+  onRenameConversation
 }: IdeaChatPanelProps) {
 
   const [inputValue, setInputValue] = useState('')
@@ -56,7 +65,6 @@ export default function IdeaChatPanel({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const mentionPopupRef = useRef<IdeaPaperMentionPopupRef>(null)
 
-  // 自动滚动到最新消息
   useEffect(() => {
     if (messagesContainerRef.current) {
       messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
@@ -64,12 +72,13 @@ export default function IdeaChatPanel({
   }, [messages, streamingText])
 
   const handleExport = async () => {
-    if (!session?.id || !session.localPath || messages.length === 0) return
+    if (!session?.localPath || !currentConversationId || messages.length === 0) return
 
     setExporting(true)
     try {
-      await exportIdeaChatToFile(session.id, session.localPath)
-      alert('对话已导出到 chat_history.md')
+      // 使用 conversationId 导出
+      await exportIdeaChatToFile(currentConversationId, session.localPath)
+      alert('对话已导出到会话目录')
     } catch (err: any) {
       alert(`导出失败: ${err.message}`)
     } finally {
@@ -88,7 +97,6 @@ export default function IdeaChatPanel({
     const value = e.target.value
     setInputValue(value)
 
-    // 检测 @ 符号触发
     const cursorPos = e.target.selectionStart
     const textBeforeCursor = value.substring(0, cursorPos)
     const match = textBeforeCursor.match(/@(\S*)$/)
@@ -133,7 +141,6 @@ export default function IdeaChatPanel({
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    // 弹窗显示时，让弹窗处理键盘事件
     if (mentionPopup && mentionPopupRef.current) {
       const handled = mentionPopupRef.current.handleKeyDown(e)
       if (handled) return
@@ -171,18 +178,22 @@ export default function IdeaChatPanel({
           >
             {exporting ? '导出中...' : '📤 导出'}
           </button>
-          <button
-            onClick={onClearMessages}
-            className="text-xs text-gray-500 hover:text-red-500 transition-colors"
-            title="清空对话"
-          >
-            🗑️ 清空
-          </button>
-          <span className="text-xs text-gray-400 bg-blue-50 px-2 py-1 rounded">
+          <span className="text-xs text-gray-400 bg-yellow-50 px-2 py-1 rounded">
             Gemini
           </span>
         </div>
       </div>
+
+      {/* 对话会话列表 */}
+      <IdeaConversationList
+        conversations={conversations}
+        currentConversationId={currentConversationId}
+        onSelect={onSwitchConversation}
+        onDelete={onDeleteConversation}
+        onRename={onRenameConversation}
+        onClear={onClearMessages}
+        onNewConversation={onNewConversation}
+      />
 
       {/* 消息区域 */}
       <div className="flex-1 flex flex-col min-h-0">
@@ -193,8 +204,8 @@ export default function IdeaChatPanel({
               <p className="text-sm">向 AI 提问关于这个研究想法的任何问题</p>
             </div>
           ) : (
-            messages.map((msg, index) => (
-              <MessageBubble key={index} message={msg} />
+            messages.map((msg) => (
+              <MessageBubble key={msg.id || msg.timestamp.getTime()} message={msg} />
             ))
           )}
 
@@ -202,7 +213,6 @@ export default function IdeaChatPanel({
           {(streamingThought || streamingText || (loading && streamingStartTime)) && (
             <div className="flex justify-start">
               <div className="max-w-[95%] bg-white text-gray-800 border border-gray-200 rounded-lg p-3 overflow-hidden">
-                {/* 流式思考过程 */}
                 {(streamingThought || (loading && streamingStartTime && !streamingText)) && (
                   <details className="mb-3 rounded-lg bg-blue-50/50 overflow-hidden border border-blue-100">
                     <summary className="list-none flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-blue-50 transition-colors">
@@ -225,7 +235,6 @@ export default function IdeaChatPanel({
                   </details>
                 )}
 
-                {/* 流式内容 */}
                 {streamingText && (
                   <div className="prose prose-sm max-w-none overflow-hidden">
                     <ReactMarkdown
@@ -240,7 +249,6 @@ export default function IdeaChatPanel({
             </div>
           )}
 
-          {/* 加载指示器 */}
           {loading && !streamingText && !streamingThought && !streamingStartTime && (
             <div className="flex justify-start">
               <div className="bg-white border border-gray-200 rounded-lg p-3">
@@ -294,7 +302,6 @@ export default function IdeaChatPanel({
             </button>
           </div>
 
-          {/* 论文引用弹窗 */}
           {mentionPopup && session && (
             <IdeaPaperMentionPopup
               ref={mentionPopupRef}
@@ -311,9 +318,6 @@ export default function IdeaChatPanel({
   )
 }
 
-/**
- * 消息气泡组件
- */
 function MessageBubble({ message }: { message: IdeaMessage }) {
   const isUser = message.role === 'user'
 

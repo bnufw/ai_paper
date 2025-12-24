@@ -158,6 +158,8 @@ function App() {
                 <IdeaChatPanel
                   session={currentIdeaSession}
                   messages={ideaChat.messages}
+                  conversations={ideaChat.conversations}
+                  currentConversationId={ideaChat.currentConversationId}
                   loading={ideaChat.loading}
                   error={ideaChat.error}
                   streamingText={ideaChat.streamingText}
@@ -167,6 +169,10 @@ function App() {
                   onClearMessages={ideaChat.clearMessages}
                   onBack={handleNewPaper}
                   onClearError={ideaChat.clearError}
+                  onNewConversation={ideaChat.createNewConversation}
+                  onSwitchConversation={ideaChat.switchConversation}
+                  onDeleteConversation={ideaChat.deleteConversation}
+                  onRenameConversation={ideaChat.renameConversation}
                 />
               }
               defaultLeftWidth={50}

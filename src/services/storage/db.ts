@@ -89,10 +89,19 @@ export interface MessageVersion {
   timestamp: Date         // 生成时间
 }
 
+// Idea 对话会话类型
+export interface IdeaConversation {
+  id?: number
+  sessionId: number     // 关联 ideaSessions.id
+  title: string
+  createdAt: Date
+  updatedAt: Date
+}
+
 // Idea 对话消息类型
 export interface IdeaMessage {
   id?: number
-  sessionId: number  // 关联 ideaSessions.id
+  conversationId: number  // 关联 ideaConversations.id
   role: 'user' | 'assistant'
   content: string
   timestamp: Date
@@ -131,7 +140,8 @@ class PaperReaderDatabase extends Dexie {
   messageVersions!: Table<MessageVersion, number>  // 消息版本历史
   settings!: Table<Settings, string>
   ideaSessions!: Table<IdeaSession, number>
-  ideaMessages!: Table<IdeaMessage, number>  // 新增：Idea 对话消息
+  ideaConversations!: Table<IdeaConversation, number>  // Idea 对话会话
+  ideaMessages!: Table<IdeaMessage, number>  // Idea 对话消息
 
   constructor() {
     super('PaperReaderDB')
@@ -220,6 +230,58 @@ class PaperReaderDatabase extends Dexie {
       ideaMessages: '++id, sessionId, timestamp'
     }).upgrade(() => {
       console.log('[DB] 升级数据库到版本 8，添加消息分支索引')
+    })
+
+    // v9: 新增 ideaConversations 表，修改 ideaMessages 索引为 conversationId
+    this.version(9).stores({
+      groups: '++id, createdAt',
+      papers: '++id, groupId, createdAt',
+      images: '++id, paperId, imageIndex',
+      conversations: '++id, paperId, createdAt',
+      messages: '++id, conversationId, timestamp, branchId',
+      messageVersions: '++id, messageId, timestamp',
+      settings: 'key',
+      ideaSessions: '++id, groupId, timestamp, status, createdAt',
+      ideaConversations: '++id, sessionId, createdAt',
+      ideaMessages: '++id, conversationId, timestamp'
+    }).upgrade(async tx => {
+      console.log('[DB] 升级数据库到版本 9，新增 ideaConversations 表')
+
+      // 迁移现有 ideaMessages：为每个有消息的 session 创建默认对话
+      const oldMessages = await tx.table('ideaMessages').toArray()
+      if (oldMessages.length === 0) return
+
+      // 按 sessionId 分组
+      const sessionMessages = new Map<number, any[]>()
+      for (const msg of oldMessages) {
+        const sid = (msg as any).sessionId
+        if (!sessionMessages.has(sid)) {
+          sessionMessages.set(sid, [])
+        }
+        sessionMessages.get(sid)!.push(msg)
+      }
+
+      // 为每个 session 创建默认对话并迁移消息
+      const ideaConversations = tx.table('ideaConversations')
+      const ideaMessages = tx.table('ideaMessages')
+
+      for (const [sessionId, messages] of sessionMessages) {
+        // 创建默认对话
+        const now = new Date()
+        const convId = await ideaConversations.add({
+          sessionId,
+          title: '默认对话',
+          createdAt: now,
+          updatedAt: now
+        })
+
+        // 更新消息关联到新的 conversationId
+        for (const msg of messages) {
+          await ideaMessages.update(msg.id, { conversationId: convId })
+        }
+      }
+
+      console.log(`[DB] 迁移完成：${sessionMessages.size} 个会话，${oldMessages.length} 条消息`)
     })
   }
 }
@@ -840,10 +902,24 @@ export async function getIdeaSession(sessionId: number): Promise<IdeaSession | u
 }
 
 /**
- * 删除 Idea 会话及其消息
+ * 删除 Idea 会话及其所有对话和消息（级联删除）
  */
 export async function deleteIdeaSession(sessionId: number): Promise<void> {
-  await deleteIdeaMessages(sessionId)
+  // 获取该 session 下的所有对话
+  const conversations = await db.ideaConversations
+    .where('sessionId')
+    .equals(sessionId)
+    .toArray()
+
+  // 删除每个对话的消息
+  for (const conv of conversations) {
+    await db.ideaMessages.where('conversationId').equals(conv.id!).delete()
+  }
+
+  // 删除对话
+  await db.ideaConversations.where('sessionId').equals(sessionId).delete()
+
+  // 删除 session
   await db.ideaSessions.delete(sessionId)
 }
 
@@ -854,15 +930,69 @@ export async function getAllIdeaSessions(): Promise<IdeaSession[]> {
   return db.ideaSessions.orderBy('createdAt').reverse().toArray()
 }
 
+// ========== Idea 对话会话函数 ==========
+
+/**
+ * 获取 Idea Session 的所有对话（按更新时间倒序）
+ */
+export async function getIdeaConversations(sessionId: number): Promise<IdeaConversation[]> {
+  const convs = await db.ideaConversations
+    .where('sessionId')
+    .equals(sessionId)
+    .toArray()
+  // 按更新时间倒序排列
+  return convs.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+}
+
+/**
+ * 创建 Idea 对话
+ */
+export async function createIdeaConversation(sessionId: number, title: string = '新对话'): Promise<number> {
+  const now = new Date()
+  return await db.ideaConversations.add({
+    sessionId,
+    title,
+    createdAt: now,
+    updatedAt: now
+  })
+}
+
+/**
+ * 重命名 Idea 对话
+ */
+export async function renameIdeaConversation(conversationId: number, newTitle: string): Promise<void> {
+  await db.ideaConversations.update(conversationId, {
+    title: newTitle.trim(),
+    updatedAt: new Date()
+  })
+}
+
+/**
+ * 删除 Idea 对话及其消息
+ */
+export async function deleteIdeaConversation(conversationId: number): Promise<void> {
+  await db.ideaMessages.where('conversationId').equals(conversationId).delete()
+  await db.ideaConversations.delete(conversationId)
+}
+
+/**
+ * 更新 Idea 对话时间
+ */
+export async function updateIdeaConversationTime(conversationId: number): Promise<void> {
+  await db.ideaConversations.update(conversationId, {
+    updatedAt: new Date()
+  })
+}
+
 // ========== Idea 对话消息函数 ==========
 
 /**
- * 获取 Idea 会话的所有消息
+ * 获取 Idea 对话的所有消息
  */
-export async function getIdeaMessages(sessionId: number): Promise<IdeaMessage[]> {
+export async function getIdeaMessages(conversationId: number): Promise<IdeaMessage[]> {
   return db.ideaMessages
-    .where('sessionId')
-    .equals(sessionId)
+    .where('conversationId')
+    .equals(conversationId)
     .sortBy('timestamp')
 }
 
@@ -870,36 +1000,40 @@ export async function getIdeaMessages(sessionId: number): Promise<IdeaMessage[]>
  * 保存 Idea 对话消息
  */
 export async function saveIdeaMessage(message: Omit<IdeaMessage, 'id'>): Promise<number> {
+  // 同时更新对话的 updatedAt
+  await updateIdeaConversationTime(message.conversationId)
   return await db.ideaMessages.add(message as IdeaMessage)
 }
 
 /**
- * 删除 Idea 会话的所有消息
+ * 删除 Idea 对话的所有消息
  */
-export async function deleteIdeaMessages(sessionId: number): Promise<void> {
-  await db.ideaMessages.where('sessionId').equals(sessionId).delete()
+export async function deleteIdeaMessages(conversationId: number): Promise<void> {
+  await db.ideaMessages.where('conversationId').equals(conversationId).delete()
 }
 
 /**
  * 导出 Idea 对话为 Markdown
  */
-export async function exportIdeaChat(sessionId: number): Promise<string> {
-  const session = await db.ideaSessions.get(sessionId)
-  if (!session) {
-    throw new Error('会话不存在')
+export async function exportIdeaChat(conversationId: number): Promise<string> {
+  const conversation = await db.ideaConversations.get(conversationId)
+  if (!conversation) {
+    throw new Error('对话不存在')
   }
 
-  const messages = await getIdeaMessages(sessionId)
+  const session = await db.ideaSessions.get(conversation.sessionId)
+
+  const messages = await getIdeaMessages(conversationId)
 
   const lines: string[] = []
 
-  lines.push(`# Idea 对话记录`)
+  lines.push(`# ${conversation.title}`)
   lines.push('')
-  lines.push(`**分组**: ${session.groupName}`)
-  lines.push(`**创建时间**: ${session.createdAt.toLocaleString('zh-CN')}`)
-  if (session.completedAt) {
-    lines.push(`**完成时间**: ${session.completedAt.toLocaleString('zh-CN')}`)
+  if (session) {
+    lines.push(`**分组**: ${session.groupName}`)
   }
+  lines.push(`**创建时间**: ${conversation.createdAt.toLocaleString('zh-CN')}`)
+  lines.push(`**更新时间**: ${conversation.updatedAt.toLocaleString('zh-CN')}`)
   lines.push('')
   lines.push('---')
   lines.push('')
