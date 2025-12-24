@@ -19,6 +19,12 @@ export default function NotePanel({ paperId, localPath, mode, noteVersion }: Not
 
   // 加载笔记
   useEffect(() => {
+    // 切换论文时先重置状态
+    setNoteContent('')
+    setHasNote(false)
+    setError(null)
+    setLoading(true)
+
     async function loadExistingNote() {
       if (!localPath) {
         setLoading(false)
