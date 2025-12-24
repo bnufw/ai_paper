@@ -178,9 +178,28 @@ export default function Sidebar({
             <span className="animate-pulse-soft">加载中...</span>
           </div>
         ) : papers.length === 0 ? (
-          <div className="p-4 text-center text-gray-500">
-            <p className="mb-2">暂无论文</p>
-            <p className="text-sm text-gray-400">点击上方按钮上传</p>
+          <div className="flex-1 overflow-y-auto">
+            <div className="p-2">
+              <button
+                onClick={handleCreateGroup}
+                className="w-full text-left px-3 py-2 text-sm text-gray-400 hover:text-gray-700 hover:bg-gray-200 rounded-lg transition-colors"
+              >
+                + 新建分组
+              </button>
+            </div>
+            {groups.length > 0 && (
+              <div className="px-2 space-y-1">
+                {groups.map(group => (
+                  <div key={group.id} className="px-3 py-2 text-sm text-gray-600 bg-gray-50 rounded-lg">
+                    📁 {group.name}
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="p-4 text-center text-gray-500">
+              <p className="mb-2">暂无论文</p>
+              <p className="text-sm text-gray-400">点击上方按钮上传</p>
+            </div>
           </div>
         ) : (
           <GroupList
