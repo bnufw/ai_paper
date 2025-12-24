@@ -344,7 +344,7 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
                   msg.role === 'user' ? 'max-w-[70%]' : 'max-w-[95%]'
                 } rounded-2xl p-3.5 overflow-hidden transition-all duration-200 ${
                   msg.role === 'user'
-                    ? 'bg-blue-500 text-white shadow-cute'
+                    ? 'bg-green-100 text-gray-800 shadow-cute'
                     : msg.addedToNote
                       ? 'bg-blue-50 text-gray-800 border-2 border-blue-200'
                       : 'bg-gray-100 text-gray-800 border border-gray-200'
@@ -373,7 +373,7 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
                       <div className="mt-2 flex gap-2">
                         <button
                           onClick={() => handleEditMessage(msg.id!)}
-                          className="text-xs text-blue-100 hover:text-white transition-colors"
+                          className="text-xs text-green-600 hover:text-green-800 transition-colors"
                           title="编辑消息"
                         >
                           ✏️ 编辑
@@ -471,7 +471,7 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
                 <div
                   className={`text-xs mt-1 ${
                     msg.role === 'user'
-                      ? 'text-blue-100'
+                      ? 'text-green-600'
                       : msg.addedToNote
                         ? 'text-pink-400'
                         : 'text-gray-400'
@@ -598,7 +598,7 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
               placeholder="输入问题... (Enter发送)"
-              className="flex-1 border border-gray-300 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-blue-400 focus:border-blue-400 resize-none text-gray-800 text-sm bg-gray-50 transition-all duration-200"
+              className="flex-1 border border-gray-300 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-blue-400 focus:border-blue-400 resize-none text-gray-800 text-sm bg-green-50 transition-all duration-200"
               rows={2}
               disabled={loading}
             />

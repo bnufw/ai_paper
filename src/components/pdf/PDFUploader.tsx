@@ -3,6 +3,7 @@ import { convertPDFToMarkdown, type OCRResult } from '../../services/pdf/mistral
 import { createPaper, getAllGroups, type PaperGroup } from '../../services/storage/db'
 import { savePaperToLocal } from '../../services/storage/paperStorage'
 import { getDirectoryHandle } from '../../services/storage/fileSystem'
+import { extractPaperTitle } from '../../utils/titleExtractor'
 
 interface PDFUploaderProps {
   onUploadComplete: (paperId: number) => void
@@ -75,7 +76,8 @@ export default function PDFUploader({ onUploadComplete }: PDFUploaderProps) {
       // 保存到本地文件系统
       setProgress({ stage: '正在保存到本地...', percent: 90 })
 
-      const title = file.name.replace('.pdf', '')
+      const fallbackTitle = file.name.replace('.pdf', '')
+      const title = extractPaperTitle(markdown, fallbackTitle)
       const selectedGroup = groups.find(g => g.id === selectedGroupId)
       const groupName = selectedGroup?.name || '未分类'
 

@@ -12,6 +12,7 @@ import {
 } from '../../services/storage/db'
 import { deletePaperFromLocal } from '../../services/storage/paperStorage'
 import { cleanupPaperCache } from '../../services/ai/cacheService'
+import { batchUpdatePaperTitles } from '../../utils/titleExtractor'
 import GroupList from './GroupList'
 import IdeaSessionList from './IdeaSessionList'
 import { IdeaWorkflowRunner, IdeaSettingsModal } from '../idea'
@@ -48,6 +49,9 @@ export default function Sidebar({
   const [ideaWorkflowOpen, setIdeaWorkflowOpen] = useState(false)
   const [ideaSettingsOpen, setIdeaSettingsOpen] = useState(false)
   const [selectedGroup, setSelectedGroup] = useState<{ id: number; name: string } | null>(null)
+
+  // 批量更新标题状态
+  const [isUpdatingTitles, setIsUpdatingTitles] = useState(false)
 
   // 加载论文和分组列表
   const loadData = async () => {
@@ -128,6 +132,24 @@ export default function Sidebar({
   const handleGenerateIdea = (groupId: number, groupName: string) => {
     setSelectedGroup({ id: groupId, name: groupName })
     setIdeaWorkflowOpen(true)
+  }
+
+  // 批量更新论文标题
+  const handleBatchUpdateTitles = async () => {
+    if (papers.length === 0) return
+    if (!confirm('将从论文内容中重新识别标题，是否继续？')) return
+
+    setIsUpdatingTitles(true)
+    try {
+      const result = await batchUpdatePaperTitles()
+      await loadData()
+      alert(`更新完成！\n共 ${result.total} 篇论文\n更新 ${result.updated} 篇\n跳过 ${result.skipped} 篇`)
+    } catch (err) {
+      console.error('批量更新标题失败:', err)
+      alert('更新失败: ' + (err as Error).message)
+    } finally {
+      setIsUpdatingTitles(false)
+    }
   }
 
   return (
@@ -240,6 +262,14 @@ export default function Sidebar({
           <div className="p-4 text-sm text-gray-500 flex justify-between items-center">
             <span>共 {papers.length} 篇论文</span>
             <div className="flex items-center gap-2">
+              <button
+                onClick={handleBatchUpdateTitles}
+                disabled={isUpdatingTitles || papers.length === 0}
+                className="text-gray-400 hover:text-blue-500 transition-colors p-1 rounded-lg hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="重新识别所有论文标题"
+              >
+                {isUpdatingTitles ? '⏳' : '📝'}
+              </button>
               <button
                 onClick={() => setIdeaSettingsOpen(true)}
                 className="text-gray-400 hover:text-blue-500 transition-colors p-1 rounded-lg hover:bg-blue-50"

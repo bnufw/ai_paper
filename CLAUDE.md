@@ -5,6 +5,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 项目概述
 
 学术论文阅读器 - 纯前端应用，支持 PDF 上传、OCR 转换、AI 对话和笔记管理。
+- 1. 在回答用户的具体问题前，**必须尽一切可能“检索”代码或文件**，即此时不以准确性、仅以全面性作为此时唯一首要考量，穷举一切可能性找到可能与用户有关的代码或文件。在这一步中，**必须使用英文与** ，auggie-mcp提供的`mcp__auggie-mcp__codebase-retrieval` 工具交互，以获取完整、全面的项目上下文。
+
+    **关键：** 不要依赖内部知识库或假设。
+    1.1  **首选工具：** 必须将 `mcp__auggie-mcp__codebase-retrieval` 作为代码库搜索的**第一选择**。
+    1.2  **语义理解：** 不要一开始就用 grep/find。使用自然语言向 Auggie 提问，搞清楚 "Where", "What", "How"。
+    1.3  **编辑前强制动作：** 在计划编辑任何文件前，必须调用 Auggie 获取涉及的符号、类或函数的详细信息。
+        - *规则：* 尽可能在一次调用中询问所有相关符号。
+        - *目标：* 确保你拥有当前磁盘状态的完整上下文。
+    1.4  **迭代：** 如果检索到的上下文不足，重复搜索直到获得全貌。
+- 运行的conda环境为 diff
+- conda是在**miniconda**里的，而不是anaconda里的
+- 跑完整的，大规模的实验请使用screen
+- 预训练的dit模型在/home/zhu/dd/DD_IGD/pretrained_models/DiT-XL-2-256x256.pt
+- log文件统一放在logs文件夹下
+- 保持工作区的整洁
 
 ## 常用命令
 

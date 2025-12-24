@@ -457,8 +457,18 @@ export async function getAllGroups(): Promise<PaperGroup[]> {
  * 移动论文到分组
  */
 export async function movePaperToGroup(paperId: number, groupId?: number): Promise<void> {
-  await db.papers.update(paperId, { 
+  await db.papers.update(paperId, {
     groupId,
+    updatedAt: new Date()
+  })
+}
+
+/**
+ * 更新论文标题
+ */
+export async function updatePaperTitle(paperId: number, title: string): Promise<void> {
+  await db.papers.update(paperId, {
+    title,
     updatedAt: new Date()
   })
 }
