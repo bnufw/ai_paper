@@ -82,8 +82,11 @@ export function useChat(paperId: number) {
     return convId
   }
 
-  // 论文切换时重置缓存状态
+  // 论文切换时重置所有状态
   useEffect(() => {
+    setCurrentConversationId(null)
+    setMessages([])
+    setLastClearAt(null)
     cacheNameRef.current = null
     cacheInitializedRef.current = false
   }, [paperId])

@@ -14,11 +14,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
         - *规则：* 尽可能在一次调用中询问所有相关符号。
         - *目标：* 确保你拥有当前磁盘状态的完整上下文。
     1.4  **迭代：** 如果检索到的上下文不足，重复搜索直到获得全貌。
-- 运行的conda环境为 diff
-- conda是在**miniconda**里的，而不是anaconda里的
-- 跑完整的，大规模的实验请使用screen
-- 预训练的dit模型在/home/zhu/dd/DD_IGD/pretrained_models/DiT-XL-2-256x256.pt
-- log文件统一放在logs文件夹下
 - 保持工作区的整洁
 
 ## 常用命令
