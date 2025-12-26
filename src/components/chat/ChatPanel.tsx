@@ -66,6 +66,7 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
   } | null>(null)
   const [modelName, setModelName] = useState('Gemini')
   const [addingToNoteId, setAddingToNoteId] = useState<number | null>(null)
+  const [copiedId, setCopiedId] = useState<number | null>(null)
   const [slashCommand, setSlashCommand] = useState<{
     show: boolean
     position: { top: number; left: number }
@@ -161,6 +162,16 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
       console.error('添加到笔记失败:', err)
     } finally {
       setAddingToNoteId(null)
+    }
+  }
+
+  const handleCopyMessage = async (messageId: number, content: string) => {
+    try {
+      await navigator.clipboard.writeText(content)
+      setCopiedId(messageId)
+      setTimeout(() => setCopiedId(null), 2000)
+    } catch (err) {
+      console.error('复制失败:', err)
     }
   }
 
@@ -510,6 +521,15 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
                           title="从此消息创建新的对话分支"
                         >
                           🔀 创建分支
+                        </button>
+
+                        {/* 复制按钮 */}
+                        <button
+                          onClick={() => handleCopyMessage(msg.id!, msg.content)}
+                          className="text-xs transition-colors text-gray-500 hover:text-blue-600"
+                          title="复制为 Markdown"
+                        >
+                          {copiedId === msg.id ? '✓ 已复制' : '📋 复制'}
                         </button>
 
                         {/* 添加到笔记按钮 */}

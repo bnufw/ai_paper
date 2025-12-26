@@ -58,7 +58,7 @@ export default function IdeaConversationList({
       </button>
 
       {/* 对话列表 - 横向滚动 */}
-      <div className="flex-1 overflow-x-auto">
+      <div className="flex-1 min-w-0 overflow-x-auto conversation-scrollbar">
         <div className="flex items-center h-full">
           {conversations.length === 0 ? (
             <div className="px-4 py-2 text-gray-500 text-sm whitespace-nowrap">
