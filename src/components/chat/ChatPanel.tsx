@@ -60,6 +60,7 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
   } | null>(null)
   const [modelName, setModelName] = useState('Gemini')
   const [addingToNoteId, setAddingToNoteId] = useState<number | null>(null)
+  const [copiedMessageId, setCopiedMessageId] = useState<number | null>(null)
   const [slashCommand, setSlashCommand] = useState<{
     show: boolean
     position: { top: number; left: number }
@@ -152,6 +153,16 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
       console.error('添加到笔记失败:', err)
     } finally {
       setAddingToNoteId(null)
+    }
+  }
+
+  const handleCopyMessage = async (messageId: number, content: string) => {
+    try {
+      await navigator.clipboard.writeText(content)
+      setCopiedMessageId(messageId)
+      setTimeout(() => setCopiedMessageId(null), 2000)
+    } catch (err) {
+      console.error('复制失败:', err)
     }
   }
 
@@ -449,20 +460,29 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
                       </ReactMarkdown>
                     </div>
 
-                    {/* 添加到笔记按钮 */}
-                    {!loading && localPath && (
-                      <div className="mt-2 flex justify-end">
-                        {msg.addedToNote ? (
-                          <span className="text-xs text-pink-600">✓ 已添加到笔记</span>
-                        ) : (
-                          <button
-                            onClick={() => handleAddToNote(msg.id!, msg.content)}
-                            disabled={addingToNoteId === msg.id}
-                            className="text-xs transition-colors disabled:opacity-70 text-gray-500 hover:text-blue-600"
-                            title="添加到笔记"
-                          >
-                            {addingToNoteId === msg.id ? '添加中...' : '📝 添加到笔记'}
-                          </button>
+                    {/* 操作按钮 */}
+                    {!loading && (
+                      <div className="mt-2 flex justify-end gap-3">
+                        <button
+                          onClick={() => handleCopyMessage(msg.id!, msg.content)}
+                          className="text-xs transition-colors text-gray-500 hover:text-blue-600"
+                          title="复制内容"
+                        >
+                          {copiedMessageId === msg.id ? '✓ 已复制' : '📋 复制'}
+                        </button>
+                        {localPath && (
+                          msg.addedToNote ? (
+                            <span className="text-xs text-pink-600">✓ 已添加到笔记</span>
+                          ) : (
+                            <button
+                              onClick={() => handleAddToNote(msg.id!, msg.content)}
+                              disabled={addingToNoteId === msg.id}
+                              className="text-xs transition-colors disabled:opacity-70 text-gray-500 hover:text-blue-600"
+                              title="添加到笔记"
+                            >
+                              {addingToNoteId === msg.id ? '添加中...' : '📝 添加到笔记'}
+                            </button>
+                          )
                         )}
                       </div>
                     )}

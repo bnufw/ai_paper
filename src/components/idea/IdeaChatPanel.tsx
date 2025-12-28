@@ -303,6 +303,17 @@ export default function IdeaChatPanel({
  */
 function MessageBubble({ message }: { message: IdeaMessage }) {
   const isUser = message.role === 'user'
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(message.content)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (err) {
+      console.error('复制失败:', err)
+    }
+  }
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
@@ -342,14 +353,25 @@ function MessageBubble({ message }: { message: IdeaMessage }) {
         {isUser ? (
           <div className="whitespace-pre-wrap break-words overflow-hidden">{message.content}</div>
         ) : (
-          <div className="prose prose-sm max-w-none overflow-hidden">
-            <ReactMarkdown
-              remarkPlugins={[remarkMath, remarkGfm]}
-              rehypePlugins={[rehypeKatex, rehypeHighlight]}
-            >
-              {message.content}
-            </ReactMarkdown>
-          </div>
+          <>
+            <div className="prose prose-sm max-w-none overflow-hidden">
+              <ReactMarkdown
+                remarkPlugins={[remarkMath, remarkGfm]}
+                rehypePlugins={[rehypeKatex, rehypeHighlight]}
+              >
+                {message.content}
+              </ReactMarkdown>
+            </div>
+            <div className="mt-2 flex justify-end">
+              <button
+                onClick={handleCopy}
+                className="text-xs transition-colors text-gray-500 hover:text-blue-600"
+                title="复制内容"
+              >
+                {copied ? '✓ 已复制' : '📋 复制'}
+              </button>
+            </div>
+          </>
         )}
 
         <div
