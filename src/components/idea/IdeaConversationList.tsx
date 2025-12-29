@@ -8,6 +8,7 @@ interface IdeaConversationListProps {
   onDelete: (id: number) => void
   onRename: (id: number, newTitle: string) => void
   onClear: () => void
+  onClearContext: () => void
   onNewConversation: () => void
 }
 
@@ -18,6 +19,7 @@ export default function IdeaConversationList({
   onDelete,
   onRename,
   onClear,
+  onClearContext,
   onNewConversation
 }: IdeaConversationListProps) {
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -127,6 +129,17 @@ export default function IdeaConversationList({
           )}
         </div>
       </div>
+
+      {/* 清空上下文按钮 */}
+      <button
+        onClick={onClearContext}
+        className="flex-shrink-0 px-3 py-2 text-gray-500 hover:text-orange-500 hover:bg-orange-50 border-l"
+        title="清空上下文（保留消息显示）"
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      </button>
 
       {/* 清空当前对话按钮 */}
       <button

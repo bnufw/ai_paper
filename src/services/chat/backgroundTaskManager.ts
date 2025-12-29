@@ -1,11 +1,14 @@
 /**
  * 后台任务管理器
  * 用于管理对话切换时在后台继续运行的 AI 请求
+ * 支持论文对话和 Idea 对话两种类型
  */
 
 export interface BackgroundTask {
   conversationId: number
-  paperId: number
+  taskType: 'paper' | 'idea'  // 任务类型
+  paperId?: number            // 论文对话用
+  sessionId?: number          // Idea 对话用
   startTime: Date
   status: 'running' | 'completed' | 'failed'
   result?: {
@@ -38,7 +41,7 @@ class BackgroundTaskManager {
   private listeners: Set<TaskListener> = new Set()
 
   /**
-   * 注册后台任务
+   * 注册论文对话后台任务
    * 当用户切换对话时，将当前正在进行的请求注册为后台任务
    */
   registerTask(
@@ -48,7 +51,28 @@ class BackgroundTaskManager {
   ): void {
     const task: BackgroundTask = {
       conversationId,
+      taskType: 'paper',
       paperId,
+      startTime: new Date(),
+      status: 'running',
+      saveContext
+    }
+    this.tasks.set(conversationId, task)
+    this.notifyListeners()
+  }
+
+  /**
+   * 注册 Idea 对话后台任务
+   */
+  registerIdeaTask(
+    conversationId: number,
+    sessionId: number,
+    saveContext: BackgroundTask['saveContext']
+  ): void {
+    const task: BackgroundTask = {
+      conversationId,
+      taskType: 'idea',
+      sessionId,
       startTime: new Date(),
       status: 'running',
       saveContext
@@ -109,7 +133,16 @@ class BackgroundTaskManager {
    */
   getRunningTasksForPaper(paperId: number): BackgroundTask[] {
     return Array.from(this.tasks.values()).filter(
-      t => t.paperId === paperId && t.status === 'running'
+      t => t.taskType === 'paper' && t.paperId === paperId && t.status === 'running'
+    )
+  }
+
+  /**
+   * 获取指定 Idea Session 相关的所有运行中任务
+   */
+  getRunningTasksForSession(sessionId: number): BackgroundTask[] {
+    return Array.from(this.tasks.values()).filter(
+      t => t.taskType === 'idea' && t.sessionId === sessionId && t.status === 'running'
     )
   }
 

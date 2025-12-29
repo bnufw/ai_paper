@@ -165,14 +165,25 @@ function App() {
                   streamingText={ideaChat.streamingText}
                   streamingThought={ideaChat.streamingThought}
                   streamingStartTime={ideaChat.streamingStartTime}
+                  editingMessageId={ideaChat.editingMessageId}
+                  branches={ideaChat.branches}
+                  activeBranchId={ideaChat.activeBranchId}
+                  lastClearAt={ideaChat.lastClearAt}
+                  backgroundTaskCount={ideaChat.backgroundTaskCount}
                   onSendMessage={ideaChat.sendMessage}
                   onClearMessages={ideaChat.clearMessages}
+                  onClearContext={ideaChat.clearContext}
                   onBack={handleNewPaper}
                   onClearError={ideaChat.clearError}
                   onNewConversation={ideaChat.createNewConversation}
                   onSwitchConversation={ideaChat.switchConversation}
                   onDeleteConversation={ideaChat.deleteConversation}
                   onRenameConversation={ideaChat.renameConversation}
+                  onEditMessage={ideaChat.editMessage}
+                  onCancelEdit={ideaChat.cancelEdit}
+                  onRegenerateResponse={ideaChat.regenerateResponse}
+                  onCreateBranch={ideaChat.createBranchFromMessage}
+                  onSwitchBranch={ideaChat.switchToBranch}
                 />
               }
               defaultLeftWidth={50}

@@ -96,6 +96,10 @@ export interface IdeaConversation {
   title: string
   createdAt: Date
   updatedAt: Date
+  // 与论文对话对齐的新字段
+  lastClearAt?: Date        // 上下文清除时间点
+  activeBranchId?: number   // 当前活跃分支 ID（0 = 主分支）
+  branchCount?: number      // 分支总数
 }
 
 // Idea 对话消息类型
@@ -107,6 +111,24 @@ export interface IdeaMessage {
   timestamp: Date
   thoughts?: string
   thinkingTimeMs?: number
+  // 与论文对话对齐的新字段
+  images?: MessageImage[]
+  branchId?: number           // 所属分支 ID（0 = 主分支）
+  parentMessageId?: number    // 分支起点消息 ID
+  groundingMetadata?: any     // Web 搜索元数据
+  webSearchQueries?: string[] // Web 搜索查询
+  generationStartTime?: Date  // 生成开始时间
+  generationEndTime?: Date    // 生成结束时间
+}
+
+// Idea 消息版本历史类型（用于重新生成功能）
+export interface IdeaMessageVersion {
+  id?: number
+  messageId: number       // 原消息 ID
+  content: string         // 保存的内容
+  thoughts?: string       // 保存的思考过程
+  thinkingTimeMs?: number
+  timestamp: Date         // 生成时间
 }
 
 // 设置类型
@@ -142,6 +164,7 @@ class PaperReaderDatabase extends Dexie {
   ideaSessions!: Table<IdeaSession, number>
   ideaConversations!: Table<IdeaConversation, number>  // Idea 对话会话
   ideaMessages!: Table<IdeaMessage, number>  // Idea 对话消息
+  ideaMessageVersions!: Table<IdeaMessageVersion, number>  // Idea 消息版本历史
 
   constructor() {
     super('PaperReaderDB')
@@ -282,6 +305,23 @@ class PaperReaderDatabase extends Dexie {
       }
 
       console.log(`[DB] 迁移完成：${sessionMessages.size} 个会话，${oldMessages.length} 条消息`)
+    })
+
+    // v10: Idea 对话功能增强 - 添加分支、图片、版本历史支持
+    this.version(10).stores({
+      groups: '++id, createdAt',
+      papers: '++id, groupId, createdAt',
+      images: '++id, paperId, imageIndex',
+      conversations: '++id, paperId, createdAt',
+      messages: '++id, conversationId, timestamp, branchId',
+      messageVersions: '++id, messageId, timestamp',
+      settings: 'key',
+      ideaSessions: '++id, groupId, timestamp, status, createdAt',
+      ideaConversations: '++id, sessionId, createdAt',
+      ideaMessages: '++id, conversationId, timestamp, branchId',
+      ideaMessageVersions: '++id, messageId, timestamp'
+    }).upgrade(() => {
+      console.log('[DB] 升级数据库到版本 10，Idea 对话功能增强')
     })
   }
 }
@@ -1251,6 +1291,251 @@ export async function getBranchesFromMessage(
   messageId: number
 ): Promise<number[]> {
   const branchMessages = await db.messages
+    .where('conversationId')
+    .equals(conversationId)
+    .filter(m => m.parentMessageId === messageId)
+    .toArray()
+
+  const branchIds = new Set<number>()
+  for (const msg of branchMessages) {
+    if (msg.branchId) {
+      branchIds.add(msg.branchId)
+    }
+  }
+
+  return Array.from(branchIds).sort((a, b) => a - b)
+}
+
+// ========== Idea 对话增强功能函数 ==========
+
+/**
+ * 更新 Idea 消息内容
+ */
+export async function updateIdeaMessage(
+  messageId: number,
+  content: string,
+  images?: MessageImage[]
+): Promise<void> {
+  const updates: Partial<IdeaMessage> = {
+    content,
+    timestamp: new Date()
+  }
+  if (images !== undefined) {
+    updates.images = images
+  }
+  await db.ideaMessages.update(messageId, updates)
+}
+
+/**
+ * 删除指定 Idea 消息之后的所有消息（包括该消息）
+ */
+export async function deleteIdeaMessagesAfter(
+  conversationId: number,
+  messageId: number
+): Promise<void> {
+  const message = await db.ideaMessages.get(messageId)
+  if (!message) {
+    throw new Error('消息不存在')
+  }
+
+  const allMessages = await db.ideaMessages
+    .where('conversationId')
+    .equals(conversationId)
+    .sortBy('timestamp')
+
+  const messageIndex = allMessages.findIndex(m => m.id === messageId)
+  if (messageIndex === -1) return
+
+  const messagesToDelete = allMessages.slice(messageIndex)
+  await db.ideaMessages.bulkDelete(messagesToDelete.map(m => m.id!))
+}
+
+/**
+ * 清空 Idea 对话上下文（设置清除时间点，不删除消息）
+ */
+export async function clearIdeaConversationContext(conversationId: number): Promise<Date> {
+  const now = new Date()
+  await db.ideaConversations.update(conversationId, {
+    lastClearAt: now,
+    updatedAt: now
+  })
+  return now
+}
+
+/**
+ * 保存 Idea 消息版本（在重新生成前调用）
+ */
+export async function saveIdeaMessageVersion(message: IdeaMessage): Promise<number> {
+  const version: Omit<IdeaMessageVersion, 'id'> = {
+    messageId: message.id!,
+    content: message.content,
+    thoughts: message.thoughts,
+    thinkingTimeMs: message.thinkingTimeMs,
+    timestamp: message.timestamp
+  }
+  return await db.ideaMessageVersions.add(version as IdeaMessageVersion)
+}
+
+/**
+ * 获取 Idea 消息的所有历史版本
+ */
+export async function getIdeaMessageVersions(messageId: number): Promise<IdeaMessageVersion[]> {
+  return db.ideaMessageVersions
+    .where('messageId')
+    .equals(messageId)
+    .sortBy('timestamp')
+}
+
+/**
+ * 获取 Idea 消息的版本数量
+ */
+export async function getIdeaMessageVersionCount(messageId: number): Promise<number> {
+  return db.ideaMessageVersions
+    .where('messageId')
+    .equals(messageId)
+    .count()
+}
+
+/**
+ * 删除 Idea 消息的所有历史版本
+ */
+export async function deleteIdeaMessageVersions(messageId: number): Promise<void> {
+  await db.ideaMessageVersions.where('messageId').equals(messageId).delete()
+}
+
+/**
+ * 获取 Idea 对话的所有分支信息
+ */
+export async function getIdeaConversationBranches(conversationId: number): Promise<BranchInfo[]> {
+  const messages = await db.ideaMessages
+    .where('conversationId')
+    .equals(conversationId)
+    .toArray()
+
+  const branchMap = new Map<number, { parentMessageId?: number; count: number }>()
+
+  for (const msg of messages) {
+    const branchId = msg.branchId ?? 0
+    const existing = branchMap.get(branchId)
+    if (existing) {
+      existing.count++
+    } else {
+      branchMap.set(branchId, {
+        parentMessageId: msg.parentMessageId,
+        count: 1
+      })
+    }
+  }
+
+  return Array.from(branchMap.entries()).map(([branchId, info]) => ({
+    branchId,
+    parentMessageId: info.parentMessageId,
+    messageCount: info.count
+  })).sort((a, b) => a.branchId - b.branchId)
+}
+
+/**
+ * 创建 Idea 对话新分支
+ */
+export async function createIdeaBranch(
+  conversationId: number,
+  _parentMessageId: number
+): Promise<number> {
+  const conversation = await db.ideaConversations.get(conversationId)
+  if (!conversation) {
+    throw new Error('对话不存在')
+  }
+
+  const newBranchId = (conversation.branchCount ?? 0) + 1
+
+  await db.ideaConversations.update(conversationId, {
+    branchCount: newBranchId,
+    activeBranchId: newBranchId
+  })
+
+  return newBranchId
+}
+
+/**
+ * 切换 Idea 对话活跃分支
+ */
+export async function switchIdeaBranch(
+  conversationId: number,
+  branchId: number
+): Promise<void> {
+  await db.ideaConversations.update(conversationId, {
+    activeBranchId: branchId
+  })
+}
+
+/**
+ * 获取 Idea 对话指定分支的消息
+ */
+export async function getIdeaBranchMessages(
+  conversationId: number,
+  branchId: number
+): Promise<IdeaMessage[]> {
+  const allMessages = await db.ideaMessages
+    .where('conversationId')
+    .equals(conversationId)
+    .sortBy('timestamp')
+
+  if (branchId === 0) {
+    return allMessages.filter(m => !m.branchId || m.branchId === 0)
+  }
+
+  const branchMessages = allMessages.filter(m => m.branchId === branchId)
+  if (branchMessages.length === 0) {
+    return []
+  }
+
+  const firstBranchMessage = branchMessages[0]
+  const parentMessageId = firstBranchMessage.parentMessageId
+
+  if (!parentMessageId) {
+    return branchMessages
+  }
+
+  const mainBranchMessages = allMessages.filter(m => {
+    if (m.branchId && m.branchId !== 0) return false
+    return m.timestamp <= (allMessages.find(x => x.id === parentMessageId)?.timestamp ?? 0)
+  })
+
+  return [...mainBranchMessages, ...branchMessages]
+}
+
+/**
+ * 获取 Idea 对话当前活跃分支 ID
+ */
+export async function getIdeaActiveBranchId(conversationId: number): Promise<number> {
+  const conversation = await db.ideaConversations.get(conversationId)
+  return conversation?.activeBranchId ?? 0
+}
+
+/**
+ * 检查 Idea 消息是否有分支
+ */
+export async function hasIdeaMessageBranches(
+  conversationId: number,
+  messageId: number
+): Promise<boolean> {
+  const branchMessages = await db.ideaMessages
+    .where('conversationId')
+    .equals(conversationId)
+    .filter(m => m.parentMessageId === messageId)
+    .toArray()
+
+  return branchMessages.length > 0
+}
+
+/**
+ * 获取从指定 Idea 消息分出的所有分支 ID
+ */
+export async function getIdeaBranchesFromMessage(
+  conversationId: number,
+  messageId: number
+): Promise<number[]> {
+  const branchMessages = await db.ideaMessages
     .where('conversationId')
     .equals(conversationId)
     .filter(m => m.parentMessageId === messageId)
