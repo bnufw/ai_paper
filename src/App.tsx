@@ -117,9 +117,11 @@ function App() {
     setShowUploader(true)
   }
 
-  const handleUploadComplete = (paperId: number) => {
+  const handleUploadComplete = async (paperId: number) => {
     setCurrentPaperId(paperId)
     setShowUploader(false)
+    const paper = await db.papers.get(paperId)
+    setCurrentPaperLocalPath(paper?.localPath)
   }
 
   return (
