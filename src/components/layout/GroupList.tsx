@@ -13,6 +13,7 @@ interface GroupListProps {
   onRenameGroup: (groupId: number, newName: string) => void
   onDeleteGroup: (groupId: number) => void
   onGenerateIdea?: (groupId: number, groupName: string) => void
+  onToggleExcludeFromIdea?: (paperId: number) => void
 }
 
 export default function GroupList({
@@ -24,7 +25,8 @@ export default function GroupList({
   onCreateGroup,
   onRenameGroup,
   onDeleteGroup,
-  onGenerateIdea
+  onGenerateIdea,
+  onToggleExcludeFromIdea
 }: GroupListProps) {
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set())
   const [editingGroupId, setEditingGroupId] = useState<number | null>(null)
@@ -133,6 +135,10 @@ export default function GroupList({
                   e.stopPropagation()
                   onDeletePaper(paper.id!)
                 }}
+                onToggleExclude={onToggleExcludeFromIdea ? (e) => {
+                  e.stopPropagation()
+                  onToggleExcludeFromIdea(paper.id!)
+                } : undefined}
               />
             ))}
           </div>
@@ -240,6 +246,10 @@ export default function GroupList({
                       e.stopPropagation()
                       onDeletePaper(paper.id!)
                     }}
+                    onToggleExclude={onToggleExcludeFromIdea ? (e) => {
+                      e.stopPropagation()
+                      onToggleExcludeFromIdea(paper.id!)
+                    } : undefined}
                   />
                 ))}
               </div>
@@ -271,13 +281,17 @@ function PaperItem({
   paper,
   isSelected,
   onSelect,
-  onDelete
+  onDelete,
+  onToggleExclude
 }: {
   paper: Paper
   isSelected: boolean
   onSelect: () => void
   onDelete: (e: React.MouseEvent) => void
+  onToggleExclude?: (e: React.MouseEvent) => void
 }) {
+  const isExcluded = paper.excludeFromIdea
+
   return (
     <div
       onClick={onSelect}
@@ -287,7 +301,7 @@ function PaperItem({
     >
       <div className="flex justify-between items-start">
         <div className="flex-1 min-w-0">
-          <h4 className="font-medium truncate mb-1 text-sm">
+          <h4 className={`font-medium truncate mb-1 text-sm ${isExcluded ? 'text-gray-500' : ''}`}>
             {paper.title}
           </h4>
           <p className="text-xs text-gray-400">
@@ -295,13 +309,26 @@ function PaperItem({
           </p>
         </div>
 
-        <button
-          onClick={onDelete}
-          className="ml-2 opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 transition-opacity"
-          title="删除"
-        >
-          🗑️
-        </button>
+        <div className="flex items-center ml-2">
+          {onToggleExclude && (
+            <button
+              onClick={onToggleExclude}
+              className={`opacity-0 group-hover:opacity-100 transition-opacity mr-1 ${
+                isExcluded ? 'text-gray-500' : 'text-green-400 hover:text-green-300'
+              }`}
+              title={isExcluded ? '已从 Idea 上下文排除，点击恢复' : '在 Idea 上下文中，点击排除'}
+            >
+              {isExcluded ? '🚫' : '🧠'}
+            </button>
+          )}
+          <button
+            onClick={onDelete}
+            className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 transition-opacity"
+            title="删除"
+          >
+            🗑️
+          </button>
+        </div>
       </div>
     </div>
   )

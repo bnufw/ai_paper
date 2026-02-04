@@ -219,11 +219,16 @@ export async function collectGroupNotes(groupId: number): Promise<string> {
     throw new Error('存储目录访问权限已失效')
   }
 
-  // 获取分组下的所有论文
-  const papers = await db.papers.where('groupId').equals(groupId).toArray()
+  // 获取分组下的所有论文（排除 excludeFromIdea 为 true 的）
+  const allPapers = await db.papers.where('groupId').equals(groupId).toArray()
+  const papers = allPapers.filter(p => !p.excludeFromIdea)
+
+  if (allPapers.length === 0) {
+    throw new Error('该分组下没有论文')
+  }
 
   if (papers.length === 0) {
-    throw new Error('该分组下没有论文')
+    throw new Error('该分组下所有论文都已从 Idea 上下文中排除')
   }
 
   const notes: string[] = []

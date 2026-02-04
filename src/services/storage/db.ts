@@ -26,6 +26,7 @@ export interface Paper {
   groupId?: number        // 所属分组 ID
   localPath?: string      // 本地文件夹路径（相对于根目录）
   pdfData?: string        // base64编码的PDF文件（废弃，迁移后删除）
+  excludeFromIdea?: boolean  // 是否从 Idea 上下文中排除
   createdAt: Date
   updatedAt: Date
 }
@@ -471,6 +472,18 @@ export async function updatePaperTitle(paperId: number, title: string): Promise<
     title,
     updatedAt: new Date()
   })
+}
+
+/**
+ * 切换论文是否从 Idea 上下文中排除
+ */
+export async function togglePaperExcludeFromIdea(paperId: number): Promise<boolean> {
+  const paper = await db.papers.get(paperId)
+  if (!paper) return false
+
+  const newValue = !paper.excludeFromIdea
+  await db.papers.update(paperId, { excludeFromIdea: newValue })
+  return newValue
 }
 
 /**

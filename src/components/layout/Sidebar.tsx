@@ -6,6 +6,7 @@ import {
   createGroup,
   renameGroup,
   deleteGroup,
+  togglePaperExcludeFromIdea,
   type Paper,
   type PaperGroup,
   type IdeaSession
@@ -54,15 +55,16 @@ export default function Sidebar({
   const [isUpdatingTitles, setIsUpdatingTitles] = useState(false)
 
   // 加载论文和分组列表
-  const loadData = async () => {
-    setLoading(true)
+  // showLoading: 是否显示加载状态（内部刷新时为 false，避免卸载 GroupList 导致状态丢失）
+  const loadData = async (showLoading = true) => {
+    if (showLoading) setLoading(true)
     const [allPapers, allGroups] = await Promise.all([
       getAllPapers(),
       getAllGroups()
     ])
     setPapers(allPapers)
     setGroups(allGroups)
-    setLoading(false)
+    if (showLoading) setLoading(false)
   }
 
   useEffect(() => {
@@ -132,6 +134,12 @@ export default function Sidebar({
   const handleGenerateIdea = (groupId: number, groupName: string) => {
     setSelectedGroup({ id: groupId, name: groupName })
     setIdeaWorkflowOpen(true)
+  }
+
+  // 切换论文是否从 Idea 上下文中排除
+  const handleToggleExcludeFromIdea = async (paperId: number) => {
+    await togglePaperExcludeFromIdea(paperId)
+    await loadData(false)  // 不显示加载状态，避免 GroupList 卸载导致展开状态丢失
   }
 
   // 批量更新论文标题
@@ -243,6 +251,7 @@ export default function Sidebar({
             onRenameGroup={handleRenameGroup}
             onDeleteGroup={handleDeleteGroup}
             onGenerateIdea={handleGenerateIdea}
+            onToggleExcludeFromIdea={handleToggleExcludeFromIdea}
           />
         )
       )}
