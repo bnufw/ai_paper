@@ -21,6 +21,7 @@ interface IdeaChatPanelProps {
   streamingText: string
   streamingThought: string
   streamingStartTime: Date | null
+  contextReady: boolean
   onSendMessage: (content: string) => void
   onClearMessages: () => void
   onBack: () => void
@@ -38,6 +39,7 @@ export default function IdeaChatPanel({
   streamingText,
   streamingThought,
   streamingStartTime,
+  contextReady,
   onSendMessage,
   onClearMessages,
   onBack
@@ -76,7 +78,7 @@ export default function IdeaChatPanel({
   }
 
   const handleSend = async () => {
-    if (!inputValue.trim() || loading) return
+    if (!inputValue.trim() || loading || !contextReady) return
     const message = inputValue
     setInputValue('')
     onSendMessage(message)
@@ -267,17 +269,17 @@ export default function IdeaChatPanel({
               value={inputValue}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
-              placeholder="讨论这个研究想法，输入 @ 引用论文... (Shift+Enter换行)"
+              placeholder={contextReady ? '讨论这个研究想法，输入 @ 引用论文... (Shift+Enter换行)' : '正在加载上下文...'}
               className="flex-1 border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none text-gray-900"
               rows={3}
               disabled={loading}
             />
             <button
               onClick={handleSend}
-              disabled={!inputValue.trim() || loading}
+              disabled={!inputValue.trim() || loading || !contextReady}
               className="px-6 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
             >
-              {loading ? '...' : '发送'}
+              {loading ? '...' : contextReady ? '发送' : '加载中'}
             </button>
           </div>
 

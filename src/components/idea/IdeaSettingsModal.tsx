@@ -315,7 +315,13 @@ export function IdeaSettingsModal({ isOpen, onClose }: Props) {
               <ModelCard
                 model={config.summarizer}
                 showToggle={false}
-                onUpdate={(updates) => updateSummarizer({ ...config.summarizer, ...updates })}
+                onUpdate={(updates) => updateSummarizer({
+                  ...config.summarizer,
+                  ...updates,
+                  thinkingConfig: updates.thinkingConfig
+                    ? { ...config.summarizer.thinkingConfig, ...updates.thinkingConfig }
+                    : config.summarizer.thinkingConfig
+                })}
               />
             </div>
           )}
@@ -458,6 +464,15 @@ function ModelCard({
   onUpdate: (updates: Partial<ModelConfig>) => void
 }) {
   const [expanded, setExpanded] = useState(false)
+  type NumberInputKey = 'temperature' | 'maxTokens' | 'thinkingBudget' | 'budgetTokens'
+
+  const formatNumberInput = (value?: number) => value === undefined ? '' : String(value)
+  const getNumberInputs = (source: ModelConfig) => ({
+    temperature: formatNumberInput(source.temperature),
+    maxTokens: formatNumberInput(source.maxTokens),
+    thinkingBudget: formatNumberInput(source.thinkingConfig?.thinkingBudget),
+    budgetTokens: formatNumberInput(source.thinkingConfig?.budgetTokens)
+  })
 
   // 本地状态管理输入框的值
   const [localConfig, setLocalConfig] = useState({
@@ -471,6 +486,8 @@ function ModelCard({
     enableThinking: model.thinkingConfig?.enableThinking,
     thinkingType: model.thinkingConfig?.thinkingType
   })
+  const [numberInputs, setNumberInputs] = useState(getNumberInputs(model))
+  const [activeNumberInput, setActiveNumberInput] = useState<NumberInputKey | null>(null)
 
   // 同步外部数据到本地状态
   useEffect(() => {
@@ -485,7 +502,26 @@ function ModelCard({
       enableThinking: model.thinkingConfig?.enableThinking,
       thinkingType: model.thinkingConfig?.thinkingType
     })
+    if (!activeNumberInput) {
+      setNumberInputs(getNumberInputs(model))
+    }
   }, [model])
+
+  const parseOptionalFloat = (value: string) => {
+    const trimmed = value.trim()
+    if (trimmed === '') return undefined
+
+    const parsed = parseFloat(trimmed)
+    return Number.isNaN(parsed) ? undefined : parsed
+  }
+
+  const parseOptionalInt = (value: string) => {
+    const trimmed = value.trim()
+    if (trimmed === '') return undefined
+
+    const parsed = parseInt(trimmed, 10)
+    return Number.isNaN(parsed) ? undefined : parsed
+  }
 
   return (
     <div className={`border rounded-lg p-4 ${model.enabled ? 'border-blue-200 bg-blue-50/30' : 'border-gray-200'}`}>
@@ -540,11 +576,12 @@ function ModelCard({
                 step="0.1"
                 min="0"
                 max="2"
-                value={localConfig.temperature ?? ''}
-                onChange={e => {
-                  const str = e.target.value
-                  const num = parseFloat(str)
-                  const val = str === '' || Number.isNaN(num) ? undefined : num
+                value={numberInputs.temperature}
+                onFocus={() => setActiveNumberInput('temperature')}
+                onChange={e => setNumberInputs(prev => ({ ...prev, temperature: e.target.value }))}
+                onBlur={() => {
+                  const val = parseOptionalFloat(numberInputs.temperature)
+                  setActiveNumberInput(null)
                   setLocalConfig(prev => ({ ...prev, temperature: val }))
                   onUpdate({ temperature: val })
                 }}
@@ -564,11 +601,12 @@ function ModelCard({
                 type="number"
                 step="1000"
                 min="1000"
-                value={localConfig.maxTokens ?? ''}
-                onChange={e => {
-                  const str = e.target.value
-                  const num = parseInt(str)
-                  const val = str === '' || Number.isNaN(num) ? undefined : num
+                value={numberInputs.maxTokens}
+                onFocus={() => setActiveNumberInput('maxTokens')}
+                onChange={e => setNumberInputs(prev => ({ ...prev, maxTokens: e.target.value }))}
+                onBlur={() => {
+                  const val = parseOptionalInt(numberInputs.maxTokens)
+                  setActiveNumberInput(null)
                   setLocalConfig(prev => ({ ...prev, maxTokens: val }))
                   onUpdate({ maxTokens: val })
                 }}
@@ -589,7 +627,6 @@ function ModelCard({
                   setLocalConfig(prev => ({ ...prev, thinkingLevel: val }))
                   onUpdate({
                     thinkingConfig: {
-                      ...model.thinkingConfig,
                       thinkingLevel: val
                     }
                   })
@@ -608,15 +645,15 @@ function ModelCard({
               <input
                 type="number"
                 step="1000"
-                value={localConfig.thinkingBudget ?? ''}
-                onChange={e => {
-                  const str = e.target.value
-                  const num = parseInt(str)
-                  const val = str === '' || Number.isNaN(num) ? undefined : num
+                value={numberInputs.thinkingBudget}
+                onFocus={() => setActiveNumberInput('thinkingBudget')}
+                onChange={e => setNumberInputs(prev => ({ ...prev, thinkingBudget: e.target.value }))}
+                onBlur={() => {
+                  const val = parseOptionalInt(numberInputs.thinkingBudget)
+                  setActiveNumberInput(null)
                   setLocalConfig(prev => ({ ...prev, thinkingBudget: val }))
                   onUpdate({
                     thinkingConfig: {
-                      ...model.thinkingConfig,
                       thinkingBudget: val
                     }
                   })
@@ -638,7 +675,6 @@ function ModelCard({
                     setLocalConfig(prev => ({ ...prev, thinkingType: val }))
                     onUpdate({
                       thinkingConfig: {
-                        ...model.thinkingConfig,
                         thinkingType: val
                       }
                     })
@@ -654,15 +690,15 @@ function ModelCard({
                 <input
                   type="number"
                   step="500"
-                  value={localConfig.budgetTokens ?? ''}
-                  onChange={e => {
-                    const str = e.target.value
-                    const num = parseInt(str)
-                    const val = str === '' || Number.isNaN(num) ? undefined : num
+                  value={numberInputs.budgetTokens}
+                  onFocus={() => setActiveNumberInput('budgetTokens')}
+                  onChange={e => setNumberInputs(prev => ({ ...prev, budgetTokens: e.target.value }))}
+                  onBlur={() => {
+                    const val = parseOptionalInt(numberInputs.budgetTokens)
+                    setActiveNumberInput(null)
                     setLocalConfig(prev => ({ ...prev, budgetTokens: val }))
                     onUpdate({
                       thinkingConfig: {
-                        ...model.thinkingConfig,
                         budgetTokens: val
                       }
                     })
@@ -681,11 +717,10 @@ function ModelCard({
                 <select
                   value={localConfig.reasoningEffort || 'low'}
                   onChange={e => {
-                    const val = e.target.value as any
+                    const val = e.target.value as 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
                     setLocalConfig(prev => ({ ...prev, reasoningEffort: val }))
                     onUpdate({
                       thinkingConfig: {
-                        ...model.thinkingConfig,
                         reasoningEffort: val
                       }
                     })
@@ -709,7 +744,6 @@ function ModelCard({
                     setLocalConfig(prev => ({ ...prev, verbosity }))
                     onUpdate({
                       thinkingConfig: {
-                        ...model.thinkingConfig,
                         verbosity
                       }
                     })
@@ -731,11 +765,10 @@ function ModelCard({
               <select
                 value={localConfig.reasoningEffort || 'low'}
                 onChange={e => {
-                  const val = e.target.value as any
+                  const val = e.target.value as 'low' | 'medium' | 'high'
                   setLocalConfig(prev => ({ ...prev, reasoningEffort: val }))
                   onUpdate({
                     thinkingConfig: {
-                      ...model.thinkingConfig,
                       reasoningEffort: val
                     }
                   })
@@ -760,7 +793,6 @@ function ModelCard({
                   setLocalConfig(prev => ({ ...prev, enableThinking: val }))
                   onUpdate({
                     thinkingConfig: {
-                      ...model.thinkingConfig,
                       enableThinking: val
                     }
                   })

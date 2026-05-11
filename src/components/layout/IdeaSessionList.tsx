@@ -4,6 +4,8 @@ import { getAllIdeaSessions, deleteIdeaSession, type IdeaSession } from '../../s
 interface IdeaSessionListProps {
   currentSessionId: number | null
   onSelectSession: (session: IdeaSession) => void
+  onDeleteSession: (sessionId: number) => void
+  refreshTrigger: number
   collapsed: boolean
 }
 
@@ -13,6 +15,8 @@ interface IdeaSessionListProps {
 export default function IdeaSessionList({
   currentSessionId,
   onSelectSession,
+  onDeleteSession,
+  refreshTrigger,
   collapsed
 }: IdeaSessionListProps) {
   const [sessions, setSessions] = useState<IdeaSession[]>([])
@@ -34,7 +38,7 @@ export default function IdeaSessionList({
       }
     }
     loadSessions()
-  }, [])
+  }, [refreshTrigger])
 
   // 删除会话
   const handleDelete = async (sessionId: number, e: React.MouseEvent) => {
@@ -44,6 +48,7 @@ export default function IdeaSessionList({
     try {
       await deleteIdeaSession(sessionId)
       setSessions(prev => prev.filter(s => s.id !== sessionId))
+      onDeleteSession(sessionId)
     } catch (err) {
       console.error('删除会话失败:', err)
     }

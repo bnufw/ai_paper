@@ -10,19 +10,21 @@ import { workflowEngine } from '../services/idea'
  * 工作流状态管理 Hook
  */
 export function useIdeaWorkflow() {
-  const [state, setState] = useState<WorkflowState>(workflowEngine.getState())
-  const [isRunning, setIsRunning] = useState(false)
+  const initialState = workflowEngine.getState()
+  const isRunningPhase = (phase: WorkflowState['phase']) =>
+    phase === 'preparing' ||
+    phase === 'generating' ||
+    phase === 'evaluating' ||
+    phase === 'summarizing'
+
+  const [state, setState] = useState<WorkflowState>(initialState)
+  const [isRunning, setIsRunning] = useState(isRunningPhase(initialState.phase))
 
   // 订阅状态变化
   useEffect(() => {
     const unsubscribe = workflowEngine.subscribe((newState) => {
       setState(newState)
-      setIsRunning(
-        newState.phase === 'preparing' ||
-        newState.phase === 'generating' ||
-        newState.phase === 'evaluating' ||
-        newState.phase === 'summarizing'
-      )
+      setIsRunning(isRunningPhase(newState.phase))
     })
 
     return unsubscribe

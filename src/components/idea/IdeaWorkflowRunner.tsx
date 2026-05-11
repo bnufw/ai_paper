@@ -3,7 +3,7 @@
  * 实时显示工作流执行状态
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useIdeaWorkflow } from '../../hooks/useIdeaWorkflow'
 import type { ModelTaskState, WorkflowPhase } from '../../types/idea'
 
@@ -11,19 +11,32 @@ interface Props {
   isOpen: boolean
   groupId: number
   groupName: string
+  onComplete?: () => void
+  onOpenSession?: (sessionId: number) => void
   onClose: () => void
 }
 
-export function IdeaWorkflowRunner({ isOpen, groupId, groupName, onClose }: Props) {
+export function IdeaWorkflowRunner({ isOpen, groupId, groupName, onComplete, onOpenSession, onClose }: Props) {
   const { state, isRunning, start, cancel, reset, getStageStats } = useIdeaWorkflow()
   const [, setTick] = useState(0)  // 用于强制刷新计时
+  const notifiedSessionIdRef = useRef<number | null>(null)
 
   // 打开时自动开始
   useEffect(() => {
     if (isOpen && state.phase === 'idle') {
+      notifiedSessionIdRef.current = null
       start(groupId)
     }
   }, [isOpen, groupId, state.phase, start])
+
+  // 完成时通知父级刷新历史列表
+  useEffect(() => {
+    if (!isOpen || state.phase !== 'completed' || !state.sessionId) return
+    if (notifiedSessionIdRef.current === state.sessionId) return
+
+    notifiedSessionIdRef.current = state.sessionId
+    onComplete?.()
+  }, [isOpen, state.phase, state.sessionId, onComplete])
 
   // 计时器：运行中时每秒刷新
   useEffect(() => {
@@ -188,14 +201,24 @@ export function IdeaWorkflowRunner({ isOpen, groupId, groupName, onClose }: Prop
         </div>
 
         {/* 底部操作 */}
-        <div className="flex justify-end px-6 py-4 border-t bg-gray-50">
+        <div className="flex justify-end gap-2 px-6 py-4 border-t bg-gray-50">
           {state.phase === 'completed' || state.phase === 'failed' || state.phase === 'cancelled' ? (
-            <button
-              onClick={handleClose}
-              className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600"
-            >
-              关闭
-            </button>
+            <>
+              {state.phase === 'completed' && state.sessionId && onOpenSession && (
+                <button
+                  onClick={() => onOpenSession(state.sessionId!)}
+                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+                >
+                  查看结果
+                </button>
+              )}
+              <button
+                onClick={handleClose}
+                className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600"
+              >
+                关闭
+              </button>
+            </>
           ) : (
             <button
               onClick={cancel}

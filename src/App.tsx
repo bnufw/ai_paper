@@ -112,6 +112,13 @@ function App() {
     setShowUploader(false)
   }
 
+  const handleDeleteIdeaSession = (sessionId: number) => {
+    if (currentIdeaSession?.id === sessionId) {
+      setCurrentIdeaSession(null)
+      setShowUploader(true)
+    }
+  }
+
   const handleNewPaper = () => {
     setCurrentPaperId(null)
     setCurrentIdeaSession(null)
@@ -134,6 +141,7 @@ function App() {
         currentIdeaSessionId={currentIdeaSession?.id ?? null}
         onSelectPaper={handlePaperSelect}
         onSelectIdeaSession={handleSelectIdeaSession}
+        onDeleteIdeaSession={handleDeleteIdeaSession}
         onNewPaper={handleNewPaper}
         onOpenSettings={() => setShowSettings(true)}
         collapsed={sidebarCollapsed}
@@ -171,6 +179,7 @@ function App() {
                   streamingText={ideaChat.streamingText}
                   streamingThought={ideaChat.streamingThought}
                   streamingStartTime={ideaChat.streamingStartTime}
+                  contextReady={ideaChat.contextReady}
                   onSendMessage={ideaChat.sendMessage}
                   onClearMessages={ideaChat.clearMessages}
                   onBack={handleNewPaper}
@@ -186,9 +195,9 @@ function App() {
               leftPanel={
                 <div className="relative h-full">
                   {/* 顶部热区 - 只有鼠标悬停在顶部区域才触发显示工具栏 */}
-                  <div className="absolute top-0 left-0 right-0 h-12 z-20 group/tabs">
+                  <div className="absolute top-0 left-0 right-0 h-3 z-20 group/tabs">
                     {/* 标签页切换工具栏 */}
-                    <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between bg-gray-50/95 backdrop-blur-sm px-3 py-1.5 opacity-0 group-hover/tabs:opacity-100 transition-opacity duration-200 shadow-sm border-b border-gray-200">
+                    <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between bg-gray-50/95 backdrop-blur-sm px-3 py-1.5 opacity-0 group-hover/tabs:opacity-100 pointer-events-none group-hover/tabs:pointer-events-auto transition-opacity duration-200 shadow-sm border-b border-gray-200">
                     <div className="flex gap-1">
                       <button
                         onClick={() => setActiveTab('paper')}

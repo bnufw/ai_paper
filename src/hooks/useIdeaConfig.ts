@@ -2,7 +2,7 @@
  * useIdeaConfig - 工作流配置管理 Hook
  */
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import type { IdeaWorkflowConfig, ModelConfig } from '../types/idea'
 import {
   getIdeaWorkflowConfig,
@@ -22,6 +22,7 @@ export function useIdeaConfig() {
   const [config, setConfig] = useState<IdeaWorkflowConfig | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const configUpdateQueueRef = useRef<Promise<void>>(Promise.resolve())
 
   // API 密钥状态
   const [apiKeys, setApiKeys] = useState<{
@@ -91,6 +92,23 @@ export function useIdeaConfig() {
     }
   }, [])
 
+  const updateStoredConfig = useCallback(async (
+    updater: (current: IdeaWorkflowConfig) => IdeaWorkflowConfig
+  ) => {
+    const run = configUpdateQueueRef.current.then(async () => {
+      setSaving(true)
+      const current = await getIdeaWorkflowConfig()
+      const newConfig = updater(current)
+      await saveIdeaWorkflowConfig(newConfig)
+      setConfig(newConfig)
+    }).finally(() => {
+      setSaving(false)
+    })
+
+    configUpdateQueueRef.current = run.catch(() => {})
+    await run
+  }, [])
+
   // 保存 API 密钥
   const saveApiKeys = useCallback(async (keys: typeof apiKeys) => {
     setSaving(true)
@@ -121,94 +139,71 @@ export function useIdeaConfig() {
 
   // 更新生成器列表
   const updateGenerators = useCallback(async (generators: ModelConfig[]) => {
-    if (!config) return
-    const newConfig = { ...config, generators }
-    await saveConfig(newConfig)
-  }, [config, saveConfig])
+    await updateStoredConfig(current => ({ ...current, generators }))
+  }, [updateStoredConfig])
 
   // 更新评审器列表
   const updateEvaluators = useCallback(async (evaluators: ModelConfig[]) => {
-    if (!config) return
-    const newConfig = { ...config, evaluators }
-    await saveConfig(newConfig)
-  }, [config, saveConfig])
+    await updateStoredConfig(current => ({ ...current, evaluators }))
+  }, [updateStoredConfig])
 
   // 更新筛选器
   const updateSummarizer = useCallback(async (summarizer: ModelConfig) => {
-    if (!config) return
-    const newConfig = { ...config, summarizer }
-    await saveConfig(newConfig)
-  }, [config, saveConfig])
+    await updateStoredConfig(current => ({ ...current, summarizer }))
+  }, [updateStoredConfig])
 
   // 更新提示词
   const updatePrompts = useCallback(async (prompts: IdeaWorkflowConfig['prompts']) => {
-    if (!config) return
-    const newConfig = { ...config, prompts }
-    await saveConfig(newConfig)
-  }, [config, saveConfig])
+    await updateStoredConfig(current => ({ ...current, prompts }))
+  }, [updateStoredConfig])
 
   // 更新用户研究方向
   const updateUserIdea = useCallback(async (userIdea: string) => {
-    if (!config) return
-    const newConfig = { ...config, userIdea }
-    await saveConfig(newConfig)
-  }, [config, saveConfig])
+    await updateStoredConfig(current => ({ ...current, userIdea }))
+  }, [updateStoredConfig])
 
   // 切换模型启用状态
   const toggleModelEnabled = useCallback(async (
     type: 'generators' | 'evaluators',
     modelId: string
   ) => {
-    if (!config) return
-
-    const models = config[type].map(m =>
-      m.id === modelId ? { ...m, enabled: !m.enabled } : m
-    )
-
-    if (type === 'generators') {
-      await updateGenerators(models)
-    } else {
-      await updateEvaluators(models)
-    }
-  }, [config, updateGenerators, updateEvaluators])
+    await updateStoredConfig(current => ({
+      ...current,
+      [type]: current[type].map(m =>
+        m.id === modelId ? { ...m, enabled: !m.enabled } : m
+      )
+    }))
+  }, [updateStoredConfig])
 
   // 添加自定义模型
   const addCustomModel = useCallback(async (
     type: 'generators' | 'evaluators',
     model: Omit<ModelConfig, 'id' | 'isPreset'>
   ) => {
-    if (!config) return
+    await updateStoredConfig(current => {
+      const newModel: ModelConfig = {
+        ...model,
+        id: `custom-${Date.now()}`,
+        isPreset: false
+      }
 
-    const newModel: ModelConfig = {
-      ...model,
-      id: `custom-${Date.now()}`,
-      isPreset: false
-    }
-
-    const models = [...config[type], newModel]
-
-    if (type === 'generators') {
-      await updateGenerators(models)
-    } else {
-      await updateEvaluators(models)
-    }
-  }, [config, updateGenerators, updateEvaluators])
+      return {
+        ...current,
+        [type]: [...current[type], newModel]
+      }
+    })
+  }, [updateStoredConfig])
 
   // 删除自定义模型
   const removeCustomModel = useCallback(async (
     type: 'generators' | 'evaluators',
     modelId: string
   ) => {
-    if (!config) return
-
-    const models = config[type].filter(m => m.id !== modelId)
-
-    if (type === 'generators') {
-      await updateGenerators(models)
-    } else {
-      await updateEvaluators(models)
-    }
-  }, [config, updateGenerators, updateEvaluators])
+    await updateStoredConfig(current => ({
+      ...current,
+      [type]: current[type].filter(m => m.id !== modelId)
+    }))
+  }, [updateStoredConfig])
 
   // 更新模型配置
   const updateModelConfig = useCallback(async (
@@ -216,18 +211,21 @@ export function useIdeaConfig() {
     modelId: string,
     updates: Partial<ModelConfig>
   ) => {
-    if (!config) return
-
-    const models = config[type].map(m =>
-      m.id === modelId ? { ...m, ...updates } : m
-    )
-
-    if (type === 'generators') {
-      await updateGenerators(models)
-    } else {
-      await updateEvaluators(models)
-    }
-  }, [config, updateGenerators, updateEvaluators])
+    await updateStoredConfig(current => ({
+      ...current,
+      [type]: current[type].map(m =>
+        m.id === modelId
+          ? {
+              ...m,
+              ...updates,
+              thinkingConfig: updates.thinkingConfig
+                ? { ...m.thinkingConfig, ...updates.thinkingConfig }
+                : m.thinkingConfig
+            }
+          : m
+      )
+    }))
+  }, [updateStoredConfig])
 
   // 重置为默认配置
   const resetToDefaults = useCallback(async () => {

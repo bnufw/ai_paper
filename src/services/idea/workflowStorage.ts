@@ -6,6 +6,7 @@
 import {
   getDirectoryHandle,
   createDirectory,
+  getDirectory,
   writeTextFile,
   readTextFile,
   checkDirectoryPermission
@@ -198,7 +199,7 @@ export async function getSessionDirectory(
     const hasPermission = await checkDirectoryPermission(rootHandle)
     if (!hasPermission) return null
 
-    return await createDirectory(rootHandle, relativePath)
+    return await getDirectory(rootHandle, relativePath)
   } catch (e) {
     console.warn('获取会话目录失败:', e)
     return null
@@ -290,19 +291,55 @@ export function formatIdeasForReview(ideas: Map<string, string>): string {
  * 合并评审报告为筛选输入（仅包含评审报告，用数字编号标识评审来源）
  */
 export function formatForSummarizer(
-  _ideas: Map<string, string>,
+  ideas: Map<string, string>,
   reviews: Map<string, string>
 ): string {
   const sections: string[] = []
-  let index = 1
+
+  sections.push('# 候选 Idea 原文\n')
+  let ideaIndex = 1
+  for (const [, content] of ideas) {
+    sections.push(`## Idea ${ideaIndex}\n\n${content}`)
+    ideaIndex++
+  }
 
   sections.push('# 评审报告汇总\n')
+  let reviewIndex = 1
   for (const [, content] of reviews) {
-    sections.push(`## 评审 ${index}\n\n${content}`)
-    index++
+    sections.push(`## 评审 ${reviewIndex}\n\n${content}`)
+    reviewIndex++
   }
 
   return sections.join('\n\n')
+}
+
+/**
+ * 将筛选报告转换为可阅读的最佳 Idea 文件
+ */
+export function buildBestIdeaDocument(
+  ideas: Map<string, string>,
+  summary: string
+): string {
+  const orderedIdeas = Array.from(ideas.values())
+  const recommendedMatch =
+    summary.match(/推荐\s*[:：]?\s*\*\*?\s*Idea\s*(\d+)/i) ||
+    summary.match(/推荐[^I]*Idea\s*(\d+)/i) ||
+    summary.match(/Best\s+Idea\s*[:：]?\s*Idea\s*(\d+)/i)
+
+  const recommendedIndex = recommendedMatch ? parseInt(recommendedMatch[1], 10) : NaN
+  const selectedIdea = Number.isNaN(recommendedIndex) ? undefined : orderedIdeas[recommendedIndex - 1]
+
+  if (!selectedIdea) {
+    return `# 评审总结\n\n${summary}`
+  }
+
+  return [
+    `# Best Idea`,
+    selectedIdea,
+    `---`,
+    `# 评审总结`,
+    summary
+  ].join('\n\n')
 }
 
 /**

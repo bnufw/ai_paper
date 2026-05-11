@@ -25,7 +25,8 @@ import {
   saveBestIdea,
   collectGeneratorContext,
   formatIdeasForReview,
-  formatForSummarizer
+  formatForSummarizer,
+  buildBestIdeaDocument
 } from './workflowStorage'
 
 type StateListener = (state: WorkflowState) => void
@@ -281,9 +282,17 @@ export class IdeaWorkflowEngine {
         throw new Error('所有生成器都失败了，无法继续')
       }
 
+      const orderedIdeas = new Map<string, string>()
+      for (const gen of enabledGenerators) {
+        const content = ideas.get(gen.slug)
+        if (content) {
+          orderedIdeas.set(gen.slug, content)
+        }
+      }
+
       // 按固定顺序分配索引并保存 Idea 文件
       let ideaIndex = 1
-      for (const [slug, content] of ideas) {
+      for (const [slug, content] of orderedIdeas) {
         await saveIdea(sessionDir, ideaIndex, slug, content)
         ideaIndex++
       }
@@ -296,7 +305,7 @@ export class IdeaWorkflowEngine {
       const baseProgress = enabledGenerators.length
 
       const evaluatorPrompt = getPrompt('evaluator', config.prompts.evaluator)
-      const ideasForReview = formatIdeasForReview(ideas)
+      const ideasForReview = formatIdeasForReview(orderedIdeas)
 
       await Promise.allSettled(
         enabledEvaluators.map(async (eval_) => {
@@ -342,7 +351,7 @@ export class IdeaWorkflowEngine {
       this.updateSummarizerStatus('running')
 
       const summarizerPrompt = getPrompt('summarizer', config.prompts.summarizer)
-      const summarizerInput = formatForSummarizer(ideas, reviews)
+      const summarizerInput = formatForSummarizer(orderedIdeas, reviews)
 
       try {
         const request = buildLLMRequest(config.summarizer, summarizerPrompt, summarizerInput, signal)
@@ -351,9 +360,10 @@ export class IdeaWorkflowEngine {
         if (signal.aborted) return
 
         if (isValidResponse(response)) {
-          await saveBestIdea(sessionDir, response.content)
-          this.updateSummarizerStatus('completed', response.content)
-          this.state.bestIdea = response.content
+          const bestIdeaDocument = buildBestIdeaDocument(orderedIdeas, response.content)
+          await saveBestIdea(sessionDir, bestIdeaDocument)
+          this.updateSummarizerStatus('completed', bestIdeaDocument)
+          this.state.bestIdea = bestIdeaDocument
 
           // 更新数据库会话状态
           await updateIdeaSessionStatus(sessionId, 'completed', {

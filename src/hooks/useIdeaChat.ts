@@ -15,6 +15,7 @@ interface IdeaChatState {
   streamingText: string
   streamingThought: string
   streamingStartTime: Date | null
+  contextReady: boolean
   bestIdea: string | null
   allIdeas: IdeaEntry[]
   currentIdeaSlug: string
@@ -33,6 +34,7 @@ export function useIdeaChat(session: IdeaSession | null) {
     streamingText: '',
     streamingThought: '',
     streamingStartTime: null,
+    contextReady: false,
     bestIdea: null,
     allIdeas: [],
     currentIdeaSlug: 'best_idea'
@@ -46,9 +48,14 @@ export function useIdeaChat(session: IdeaSession | null) {
       setState(prev => ({
         ...prev,
         messages: [],
+        loading: false,
+        streamingText: '',
+        streamingThought: '',
+        streamingStartTime: null,
         bestIdea: null,
         allIdeas: [],
         currentIdeaSlug: 'best_idea',
+        contextReady: false,
         error: ''
       }))
       contextRef.current = null
@@ -59,17 +66,26 @@ export function useIdeaChat(session: IdeaSession | null) {
     setState(prev => ({
       ...prev,
       messages: [],
+      loading: false,
+      streamingText: '',
+      streamingThought: '',
+      streamingStartTime: null,
       bestIdea: null,
       allIdeas: [],
+      contextReady: false,
       error: ''
     }))
     contextRef.current = null
 
+    let cancelled = false
+
     async function loadSessionContent() {
       try {
         const sessionDir = await getSessionDirectory(session!.localPath)
+        if (cancelled) return
+
         if (!sessionDir) {
-          setState(prev => ({ ...prev, error: '无法访问会话目录' }))
+          setState(prev => ({ ...prev, contextReady: false, error: '无法访问会话目录' }))
           return
         }
 
@@ -80,8 +96,10 @@ export function useIdeaChat(session: IdeaSession | null) {
           getIdeaMessages(session!.id!)
         ])
 
+        if (cancelled) return
+
         if (!bestIdea) {
-          setState(prev => ({ ...prev, error: 'best_idea 内容为空' }))
+          setState(prev => ({ ...prev, contextReady: false, error: 'best_idea 内容为空' }))
           return
         }
 
@@ -105,18 +123,26 @@ export function useIdeaChat(session: IdeaSession | null) {
           bestIdea,
           allIdeas,
           currentIdeaSlug: 'best_idea',
+          contextReady: true,
           error: ''
         }))
       } catch (err) {
+        if (cancelled) return
+
         console.error('加载会话内容失败:', err)
         setState(prev => ({
           ...prev,
+          contextReady: false,
           error: (err as Error).message
         }))
       }
     }
 
     loadSessionContent()
+
+    return () => {
+      cancelled = true
+    }
   }, [session?.id])
 
   // 切换显示的 idea
@@ -183,7 +209,7 @@ export function useIdeaChat(session: IdeaSession | null) {
     if (!content.trim() || !session || state.loading) return
 
     // 检查上下文是否已加载
-    if (!contextRef.current) {
+    if (!state.contextReady || !contextRef.current) {
       setState(prev => ({ ...prev, error: '正在加载上下文，请稍候' }))
       return
     }
@@ -271,7 +297,7 @@ export function useIdeaChat(session: IdeaSession | null) {
         streamingStartTime: null
       }))
     }
-  }, [session, state.loading, state.messages, loadMentionedPapers])
+  }, [session, state.loading, state.contextReady, state.messages, loadMentionedPapers])
 
   // 清空对话
   const clearMessages = useCallback(async () => {

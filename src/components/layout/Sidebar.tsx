@@ -7,6 +7,7 @@ import {
   renameGroup,
   deleteGroup,
   togglePaperExcludeFromIdea,
+  getIdeaSession,
   type Paper,
   type PaperGroup,
   type IdeaSession
@@ -24,6 +25,7 @@ interface SidebarProps {
   currentIdeaSessionId: number | null
   onSelectPaper: (paperId: number) => void
   onSelectIdeaSession: (session: IdeaSession) => void
+  onDeleteIdeaSession: (sessionId: number) => void
   onNewPaper: () => void
   onOpenSettings: () => void
   collapsed: boolean
@@ -36,6 +38,7 @@ export default function Sidebar({
   currentIdeaSessionId,
   onSelectPaper,
   onSelectIdeaSession,
+  onDeleteIdeaSession,
   onNewPaper,
   onOpenSettings,
   collapsed,
@@ -50,6 +53,7 @@ export default function Sidebar({
   const [ideaWorkflowOpen, setIdeaWorkflowOpen] = useState(false)
   const [ideaSettingsOpen, setIdeaSettingsOpen] = useState(false)
   const [selectedGroup, setSelectedGroup] = useState<{ id: number; name: string } | null>(null)
+  const [ideaSessionRefreshTrigger, setIdeaSessionRefreshTrigger] = useState(0)
 
   // 批量更新标题状态
   const [isUpdatingTitles, setIsUpdatingTitles] = useState(false)
@@ -140,6 +144,20 @@ export default function Sidebar({
   const handleToggleExcludeFromIdea = async (paperId: number) => {
     await togglePaperExcludeFromIdea(paperId)
     await loadData(false)  // 不显示加载状态，避免 GroupList 卸载导致展开状态丢失
+  }
+
+  const refreshIdeaSessions = () => {
+    setIdeaSessionRefreshTrigger(v => v + 1)
+  }
+
+  const handleOpenIdeaSession = async (sessionId: number) => {
+    const session = await getIdeaSession(sessionId)
+    if (!session) return
+
+    onSelectIdeaSession(session)
+    setIdeaWorkflowOpen(false)
+    setSelectedGroup(null)
+    refreshIdeaSessions()
   }
 
   // 批量更新论文标题
@@ -261,6 +279,8 @@ export default function Sidebar({
         <IdeaSessionList
           currentSessionId={currentIdeaSessionId}
           onSelectSession={onSelectIdeaSession}
+          onDeleteSession={onDeleteIdeaSession}
+          refreshTrigger={ideaSessionRefreshTrigger}
           collapsed={collapsed}
         />
       )}
@@ -311,6 +331,8 @@ export default function Sidebar({
           isOpen={ideaWorkflowOpen}
           groupId={selectedGroup.id}
           groupName={selectedGroup.name}
+          onComplete={refreshIdeaSessions}
+          onOpenSession={handleOpenIdeaSession}
           onClose={() => {
             setIdeaWorkflowOpen(false)
             setSelectedGroup(null)
