@@ -3,7 +3,7 @@ import Sidebar from './components/layout/Sidebar'
 import ResizablePanel from './components/layout/ResizablePanel'
 import APIKeySettings from './components/settings/APIKeySettings'
 import StorageSetupDialog from './components/settings/StorageSetupDialog'
-import PDFUploader from './components/pdf/PDFUploader'
+import ImportCenter from './components/import/ImportCenter'
 import ChatPanel from './components/chat/ChatPanel'
 import NotePanel from './components/note/NotePanel'
 import PDFViewer from './components/pdf/PDFViewer'
@@ -157,7 +157,7 @@ function App() {
           {showUploader ? (
             /* Upload View */
             <div className="flex-1 overflow-auto p-8 bg-gray-50">
-              <PDFUploader onUploadComplete={handleUploadComplete} />
+              <ImportCenter onImportComplete={handleUploadComplete} />
             </div>
           ) : currentIdeaSession ? (
             /* Idea Chat View: Idea 查看器 + 对话面板 */

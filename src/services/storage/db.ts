@@ -27,8 +27,25 @@ export interface Paper {
   localPath?: string      // 本地文件夹路径（相对于根目录）
   pdfData?: string        // base64编码的PDF文件（废弃，迁移后删除）
   excludeFromIdea?: boolean  // 是否从 Idea 上下文中排除
+  sourceId?: string
+  sourceProvider?: string
+  pdfUrl?: string
+  forumUrl?: string
+  venue?: string
+  year?: number
+  authors?: string[]
   createdAt: Date
   updatedAt: Date
+}
+
+export interface PaperSourceMetadata {
+  sourceId?: string
+  sourceProvider?: string
+  pdfUrl?: string
+  forumUrl?: string
+  venue?: string
+  year?: number
+  authors?: string[]
 }
 
 // 论文图片类型（废弃，迁移后删除）
@@ -175,6 +192,20 @@ class PaperReaderDatabase extends Dexie {
     }).upgrade(() => {
       console.log('[DB] 升级数据库到版本 6，新增 ideaMessages 表')
     })
+
+    // v7: 记录论文外部来源，用于搜索导入去重
+    this.version(7).stores({
+      groups: '++id, createdAt',
+      papers: '++id, groupId, createdAt, sourceId, pdfUrl',
+      images: '++id, paperId, imageIndex',
+      conversations: '++id, paperId, createdAt',
+      messages: '++id, conversationId, timestamp',
+      settings: 'key',
+      ideaSessions: '++id, groupId, timestamp, status, createdAt',
+      ideaMessages: '++id, sessionId, timestamp'
+    }).upgrade(() => {
+      console.log('[DB] 升级数据库到版本 7，新增论文来源索引')
+    })
   }
 }
 
@@ -262,7 +293,8 @@ export async function createPaper(
   images: string[],
   pdfData?: string,
   groupId?: number,
-  localPath?: string
+  localPath?: string,
+  sourceMetadata?: PaperSourceMetadata
 ): Promise<number> {
   const now = new Date()
 
@@ -273,6 +305,7 @@ export async function createPaper(
     pdfData,
     groupId,
     localPath,
+    ...sourceMetadata,
     createdAt: now,
     updatedAt: now
   })
@@ -288,6 +321,25 @@ export async function createPaper(
   }
 
   return paperId
+}
+
+/**
+ * 按外部来源查找论文，用于搜索导入去重
+ */
+export async function findPaperBySource(
+  sourceId?: string,
+  pdfUrl?: string
+): Promise<Paper | undefined> {
+  if (sourceId) {
+    const paper = await db.papers.where('sourceId').equals(sourceId).first()
+    if (paper) return paper
+  }
+
+  if (pdfUrl) {
+    return db.papers.where('pdfUrl').equals(pdfUrl).first()
+  }
+
+  return undefined
 }
 
 /**

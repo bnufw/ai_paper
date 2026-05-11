@@ -189,7 +189,7 @@ export default function Sidebar({
             onClick={onNewPaper}
             className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-medium py-2.5 px-4 rounded-xl text-sm shadow-cute transition-all duration-200 hover:shadow-cute-lg hover:-translate-y-0.5"
           >
-            + 上传新论文
+            + 导入论文
           </button>
         )}
         <button
@@ -209,7 +209,7 @@ export default function Sidebar({
           <button
             onClick={onNewPaper}
             className="w-10 h-10 bg-blue-500 hover:bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-cute transition-all duration-200 hover:scale-105"
-            title="上传新论文"
+            title="导入论文"
           >
             +
           </button>

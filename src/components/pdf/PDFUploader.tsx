@@ -1,9 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
-import { convertPDFToMarkdown, type OCRResult } from '../../services/pdf/mistralOCR'
-import { createPaper, getAllGroups, type PaperGroup } from '../../services/storage/db'
-import { savePaperToLocal } from '../../services/storage/paperStorage'
-import { getDirectoryHandle } from '../../services/storage/fileSystem'
-import { extractPaperTitle } from '../../utils/titleExtractor'
+import { getAllGroups, type PaperGroup } from '../../services/storage/db'
+import { processAndSavePaper } from '../../services/paper/importPaper'
 
 interface PDFUploaderProps {
   onUploadComplete: (paperId: number) => void
@@ -24,8 +21,12 @@ export default function PDFUploader({ onUploadComplete }: PDFUploaderProps) {
   }, [])
 
   const loadGroups = async () => {
-    const allGroups = await getAllGroups()
-    setGroups(allGroups)
+    try {
+      const allGroups = await getAllGroups()
+      setGroups(allGroups)
+    } catch (err) {
+      console.error('加载分组失败:', err)
+    }
   }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -56,52 +57,11 @@ export default function PDFUploader({ onUploadComplete }: PDFUploaderProps) {
     setError('')
 
     try {
-      // 检查是否配置了存储目录
-      const rootHandle = await getDirectoryHandle()
-      if (!rootHandle) {
-        throw new Error('未配置存储目录,请先在设置中选择存储位置')
-      }
+      const paperId = await processAndSavePaper(file, {
+        groupId: selectedGroupId,
+        onProgress: (stage, percent) => setProgress({ stage, percent })
+      })
 
-      // 使用 Mistral OCR API 直接处理 PDF
-      const ocrResult: OCRResult = await convertPDFToMarkdown(
-        file,
-        (stage, percent) => {
-          setProgress({ stage, percent: percent || 0 })
-        }
-      )
-
-      // markdown 中的图片引用已在 OCR 处理时正确设置
-      const markdown = ocrResult.markdown
-
-      // 保存到本地文件系统
-      setProgress({ stage: '正在保存到本地...', percent: 90 })
-
-      const fallbackTitle = file.name.replace('.pdf', '')
-      const title = extractPaperTitle(markdown, fallbackTitle)
-      const selectedGroup = groups.find(g => g.id === selectedGroupId)
-      const groupName = selectedGroup?.name || '未分类'
-
-      const localPath = await savePaperToLocal(
-        groupName,
-        title,
-        file,
-        markdown,
-        ocrResult.images
-      )
-
-      // 保存元数据到数据库
-      setProgress({ stage: '正在保存元数据...', percent: 95 })
-      const paperId = await createPaper(
-        title,
-        markdown,
-        [],
-        undefined,
-        selectedGroupId,
-        localPath
-      )
-
-      // 完成
-      setProgress({ stage: '完成!', percent: 100 })
       setTimeout(() => {
         onUploadComplete(paperId)
       }, 500)
