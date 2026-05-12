@@ -73,6 +73,7 @@ Questions to answer:
   - SSE with `content-type: text/event-stream`, `event: progress`, and final `event: result`.
   - Direct JSON with `content-type: application/json` and the final result object.
 - Error responses use non-2xx HTTP status and should expose `detail` when available.
+- Search result `pdf_url` may be empty for sources that only expose a paper/detail page; import may fall back to a trusted `forum_url` when the backend PDF proxy can resolve it to a real PDF.
 - Venue metadata from `GET /api/venues` is the source of truth for fetched/indexed years:
   - `status[year].fetched`
   - `status[year].indexed`
@@ -85,6 +86,7 @@ Questions to answer:
 - Venue with indexed years -> default selection should prefer the latest indexed year.
 - Venue with fetched but unindexed years -> default selection should prefer the latest fetched year.
 - Venue with no status years -> default selection may fall back to the newest selectable calendar year.
+- Multi-search `auto_latest` should choose the latest locally searchable year per venue from fetched years, because keyword fallback supports fetched data even without a vector index.
 
 ### 5. Good/Base/Bad Cases
 
@@ -98,6 +100,8 @@ Questions to answer:
 - Unit or integration test for SSE result parsing.
 - Component-level test or manual check that a venue with `2025` indexed and `2026` unprepared defaults to `2025`.
 - Manual check through Vite proxy: `POST /api/search` returns results from the active backend.
+- Backend check that `POST /api/multi-search` auto-latest includes venues with fetched-but-unindexed local data.
+- Manual or automated check that an import source with only a trusted detail-page URL resolves through `/api/download-pdf`.
 
 ### 7. Wrong vs Correct
 

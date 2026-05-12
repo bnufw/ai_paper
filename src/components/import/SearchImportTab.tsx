@@ -29,6 +29,19 @@ const FALLBACK_VENUES: Venue[] = [
   { name: 'AAAI', display_name: 'AAAI', min_year: 2024, status: {} }
 ]
 
+const IMPORT_SOURCE_HOST_SUFFIXES = [
+  'openreview.net',
+  'thecvf.com',
+  'arxiv.org',
+  'semanticscholar.org',
+  'aclanthology.org',
+  'proceedings.mlr.press',
+  'neurips.cc',
+  'nips.cc',
+  'aaai.org',
+  'doi.org'
+] as const
+
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError'
 }
@@ -63,6 +76,23 @@ function scorePercent(score: number): number {
   return Math.max(0, Math.min(100, Math.round(score * 100)))
 }
 
+function isImportableSourceUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase()
+    return IMPORT_SOURCE_HOST_SUFFIXES.some(suffix => host === suffix || host.endsWith(`.${suffix}`))
+  } catch {
+    return false
+  }
+}
+
+function getImportSourceUrl(paper: SearchPaper): string {
+  const pdfUrl = paper.pdf_url?.trim()
+  if (pdfUrl) return pdfUrl
+
+  const forumUrl = paper.forum_url?.trim()
+  return forumUrl && isImportableSourceUrl(forumUrl) ? forumUrl : ''
+}
+
 function latestReadyYear(venue: Venue | undefined, fallbackYears: number[]): number {
   const status = venue?.status ?? {}
   const yearsByState = (key: keyof Venue['status'][string]) =>
@@ -95,6 +125,7 @@ function PaperResultCard({
   const pct = scorePercent(paper.relevance_score)
   const authors = paper.authors.slice(0, 4).join(', ')
   const moreAuthors = paper.authors.length > 4 ? ` +${paper.authors.length - 4}` : ''
+  const importSourceUrl = getImportSourceUrl(paper)
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-4 hover:border-blue-300 transition-colors">
@@ -113,10 +144,11 @@ function PaperResultCard({
             </div>
             <button
               onClick={() => onImport(paper)}
-              disabled={importing || !paper.pdf_url}
+              disabled={importing || !importSourceUrl}
+              title={importSourceUrl ? undefined : '搜索结果缺少 PDF 链接，无法导入'}
               className="shrink-0 px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
             >
-              {importing ? '导入中' : '导入'}
+              {importing ? '导入中' : importSourceUrl ? '导入' : '缺少 PDF'}
             </button>
           </div>
 
@@ -474,13 +506,18 @@ export default function SearchImportTab({ onImportComplete }: SearchImportTabPro
 
   const handleImport = async (paper: SearchPaper) => {
     if (importingPaperId) return
+    const importSourceUrl = getImportSourceUrl(paper)
+    if (!importSourceUrl) {
+      setSearchError('搜索结果缺少 PDF 链接，无法导入。')
+      return
+    }
 
     setImportingPaperId(paper.id)
     setImportProgress({ stage: '检查是否已导入...', percent: 3 })
     setSearchError('')
 
     try {
-      const existing = await findPaperBySource(paper.id, paper.pdf_url)
+      const existing = await findPaperBySource(paper.id, importSourceUrl)
       if (existing?.id) {
         setImportProgress({ stage: '已存在，正在打开...', percent: 100 })
         setTimeout(() => onImportComplete(existing.id!), 300)
@@ -490,7 +527,7 @@ export default function SearchImportTab({ onImportComplete }: SearchImportTabPro
       setImportProgress({ stage: '正在下载 PDF...', percent: 8 })
       let downloadSource = 'direct'
       const pdfFile = await fetchPdfFile(
-        paper.pdf_url,
+        importSourceUrl,
         paper.title || paper.id,
         source => {
           downloadSource = source
@@ -508,7 +545,7 @@ export default function SearchImportTab({ onImportComplete }: SearchImportTabPro
         sourceMetadata: {
           sourceId: paper.id,
           sourceProvider: 'openreview_search',
-          pdfUrl: paper.pdf_url,
+          pdfUrl: importSourceUrl,
           forumUrl: paper.forum_url,
           venue: paper.venue,
           year: paper.year,
@@ -722,7 +759,7 @@ export default function SearchImportTab({ onImportComplete }: SearchImportTabPro
 
           {searchMode === 'multi' && (
             <div className="mb-4 text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-              多会场模式会搜索每个会议已有索引的最新年份。
+              多会场模式会搜索每个会议已有本地数据的最新年份，优先使用向量索引。
             </div>
           )}
 

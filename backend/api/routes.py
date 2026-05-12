@@ -5,9 +5,10 @@ import json
 import queue
 import threading
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urljoin, urlparse
 
 import requests
+from bs4 import BeautifulSoup
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -56,7 +57,10 @@ ALLOWED_PDF_HOST_SUFFIXES = (
     "semanticscholar.org",
     "aclanthology.org",
     "proceedings.mlr.press",
+    "neurips.cc",
+    "nips.cc",
     "aaai.org",
+    "doi.org",
 )
 
 
@@ -156,26 +160,105 @@ def _is_allowed_pdf_url(url: str) -> bool:
     return any(host == suffix or host.endswith(f".{suffix}") for suffix in ALLOWED_PDF_HOST_SUFFIXES)
 
 
+def _normalize_pdf_source_url(url: str) -> str:
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+
+    if host in {"arxiv.org", "www.arxiv.org"} and parsed.path.startswith("/abs/"):
+        return parsed._replace(path=parsed.path.replace("/abs/", "/pdf/", 1), query="", fragment="").geturl()
+
+    if host == "openreview.net" and parsed.path == "/forum":
+        note_id = parse_qs(parsed.query).get("id", [""])[0]
+        if note_id:
+            return f"https://openreview.net/pdf?id={note_id}"
+
+    return url
+
+
+def _looks_like_pdf_response(response: requests.Response, source_url: str) -> bool:
+    content_type = response.headers.get("content-type", "")
+    return "pdf" in content_type.lower() or source_url.lower().split("?", 1)[0].endswith(".pdf")
+
+
+def _extract_pdf_url_from_html(html: str, base_url: str) -> str | None:
+    soup = BeautifulSoup(html, "html.parser")
+
+    meta = soup.select_one("meta[name='citation_pdf_url'][content]")
+    if meta:
+        candidate = urljoin(base_url, str(meta.get("content", "")))
+        if _is_allowed_pdf_url(candidate):
+            return _normalize_pdf_source_url(candidate)
+
+    for link in soup.select("a[href]"):
+        href = str(link.get("href", ""))
+        label = link.get_text(" ", strip=True).lower()
+        href_lower = href.lower()
+        if not (href_lower.endswith(".pdf") or "/pdf" in href_lower or "/article/download/" in href_lower or "pdf" in label):
+            continue
+        candidate = urljoin(base_url, href)
+        if _is_allowed_pdf_url(candidate):
+            return _normalize_pdf_source_url(candidate)
+
+    return None
+
+
+def _request_pdf_source(url: str) -> requests.Response:
+    current_url = url
+    for _ in range(6):
+        if not _is_allowed_pdf_url(current_url):
+            raise HTTPException(status_code=400, detail="Unsupported PDF source.")
+
+        response = requests.get(
+            current_url,
+            stream=True,
+            timeout=60,
+            headers={"User-Agent": "paper-reader-pdf-import/1.0"},
+            allow_redirects=False,
+        )
+
+        if response.is_redirect:
+            location = response.headers.get("location")
+            response.close()
+            if not location:
+                raise HTTPException(status_code=502, detail="PDF source returned an invalid redirect.")
+            current_url = urljoin(current_url, location)
+            continue
+
+        response.raise_for_status()
+        return response
+
+    raise HTTPException(status_code=502, detail="PDF source redirected too many times.")
+
+
 @router.get("/download-pdf")
 def download_pdf(url: str = Query(..., min_length=8)):
     """Download a paper PDF for browser clients that cannot fetch it directly."""
     if not _is_allowed_pdf_url(url):
         raise HTTPException(status_code=400, detail="Unsupported PDF source.")
 
+    source_url = _normalize_pdf_source_url(url)
     try:
-        response = requests.get(
-            url,
-            stream=True,
-            timeout=60,
-            headers={"User-Agent": "paper-reader-pdf-import/1.0"},
-            allow_redirects=True,
-        )
-        response.raise_for_status()
+        response = _request_pdf_source(source_url)
     except requests.RequestException as exc:
         raise HTTPException(status_code=502, detail=f"Failed to download PDF: {exc}") from exc
 
-    content_type = response.headers.get("content-type", "application/pdf")
-    if "pdf" not in content_type.lower() and not url.lower().split("?", 1)[0].endswith(".pdf"):
+    if not _looks_like_pdf_response(response, source_url):
+        content_type = response.headers.get("content-type", "")
+        resolved_url = None
+        if "html" in content_type.lower():
+            resolved_url = _extract_pdf_url_from_html(response.text, response.url)
+
+        if not resolved_url:
+            response.close()
+            raise HTTPException(status_code=502, detail="Downloaded file does not look like a PDF.")
+
+        response.close()
+        try:
+            response = _request_pdf_source(resolved_url)
+        except requests.RequestException as exc:
+            raise HTTPException(status_code=502, detail=f"Failed to download PDF: {exc}") from exc
+
+    if not _looks_like_pdf_response(response, response.url):
         response.close()
         raise HTTPException(status_code=502, detail="Downloaded file does not look like a PDF.")
 
@@ -355,23 +438,25 @@ def search_papers(req: SearchRequest):
 
             result_papers = []
             for p in papers:
+                pdf_url = p.get("pdf_url") or ""
+                forum_url = p.get("forum_url") or ""
                 result_papers.append({
-                    "id": p.get("id", ""),
-                    "title": p.get("title", ""),
-                    "title_zh": p.get("title_zh", ""),
-                    "authors": p.get("authors", []),
-                    "abstract": p.get("abstract", ""),
-                    "abstract_zh": p.get("abstract_zh", ""),
-                    "keywords": p.get("keywords", []),
+                    "id": p.get("id") or "",
+                    "title": p.get("title") or "",
+                    "title_zh": p.get("title_zh") or "",
+                    "authors": p.get("authors") or [],
+                    "abstract": p.get("abstract") or "",
+                    "abstract_zh": p.get("abstract_zh") or "",
+                    "keywords": p.get("keywords") or [],
                     "venue": p.get("venue", req.venue),
                     "year": p.get("year", req.year),
-                    "decision": p.get("decision", "N/A"),
-                    "pdf_url": p.get("pdf_url", ""),
-                    "forum_url": p.get("forum_url", ""),
-                    "relevance_score": round(p.get("relevance_score", 0.0), 4),
-                    "relevance_reason": p.get("relevance_reason", ""),
-                    "rrf_score": round(p.get("rrf_score", 0.0), 6),
-                    "search_source": p.get("search_source", ""),
+                    "decision": p.get("decision") or "N/A",
+                    "pdf_url": pdf_url,
+                    "forum_url": forum_url,
+                    "relevance_score": round(p.get("relevance_score") or 0.0, 4),
+                    "relevance_reason": p.get("relevance_reason") or "",
+                    "rrf_score": round(p.get("rrf_score") or 0.0, 6),
+                    "search_source": p.get("search_source") or "",
                 })
 
             safe_put(_sse_event("result", {
@@ -419,7 +504,7 @@ def multi_search(req: MultiSearchRequest):
         if not venue_pairs:
             raise HTTPException(
                 status_code=400,
-                detail="No indexed venues found. Please fetch and index data first.",
+                detail="No searchable venues found. Please fetch papers first.",
             )
     else:
         if not req.venues:

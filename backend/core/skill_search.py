@@ -1,10 +1,11 @@
-"""Multi-venue topic search across indexed conferences."""
+"""Multi-venue topic search across locally available conferences."""
 
 from typing import Any
 
 from loguru import logger
 
 from .evaluator import evaluate_relevance
+from .fetcher import list_cached_years
 from .indexer import list_indexed_years
 from .keyword_extractor import extract_keywords
 from .search_engine import hybrid_search
@@ -24,11 +25,18 @@ def pick_latest_indexed_year(venue: str) -> int | None:
     return years[-1]
 
 
+def pick_latest_searchable_year(venue: str) -> int | None:
+    years = list_cached_years(venue)
+    if not years:
+        return None
+    return years[-1]
+
+
 def resolve_auto_latest_venues() -> list[tuple[str, int]]:
-    """Return (venue, latest_indexed_year) for every venue that has indexed data."""
+    """Return (venue, latest_searchable_year) for every venue with local data."""
     pairs: list[tuple[str, int]] = []
     for venue_name in VENUES:
-        year = pick_latest_indexed_year(venue_name)
+        year = pick_latest_searchable_year(venue_name)
         if year is not None:
             pairs.append((venue_name, year))
     return pairs
@@ -37,24 +45,26 @@ def resolve_auto_latest_venues() -> list[tuple[str, int]]:
 def serialize_papers(papers: list[dict[str, Any]], venue: str, year: int) -> list[dict[str, Any]]:
     serialized: list[dict[str, Any]] = []
     for rank, paper in enumerate(papers, start=1):
+        pdf_url = paper.get("pdf_url") or ""
+        forum_url = paper.get("forum_url") or ""
         serialized.append({
             "rank": rank,
-            "id": paper.get("id", ""),
-            "title": paper.get("title", ""),
-            "title_zh": paper.get("title_zh", ""),
-            "authors": paper.get("authors", []),
-            "abstract": paper.get("abstract", ""),
-            "abstract_zh": paper.get("abstract_zh", ""),
-            "keywords": paper.get("keywords", []),
+            "id": paper.get("id") or "",
+            "title": paper.get("title") or "",
+            "title_zh": paper.get("title_zh") or "",
+            "authors": paper.get("authors") or [],
+            "abstract": paper.get("abstract") or "",
+            "abstract_zh": paper.get("abstract_zh") or "",
+            "keywords": paper.get("keywords") or [],
             "venue": paper.get("venue", venue),
             "year": paper.get("year", year),
-            "decision": paper.get("decision", "N/A"),
-            "pdf_url": paper.get("pdf_url", ""),
-            "forum_url": paper.get("forum_url", ""),
-            "relevance_score": round(paper.get("relevance_score", 0.0), 4),
-            "relevance_reason": paper.get("relevance_reason", ""),
-            "rrf_score": round(paper.get("rrf_score", 0.0), 6),
-            "search_source": paper.get("search_source", ""),
+            "decision": paper.get("decision") or "N/A",
+            "pdf_url": pdf_url,
+            "forum_url": forum_url,
+            "relevance_score": round(paper.get("relevance_score") or 0.0, 4),
+            "relevance_reason": paper.get("relevance_reason") or "",
+            "rrf_score": round(paper.get("rrf_score") or 0.0, 6),
+            "search_source": paper.get("search_source") or "",
         })
     return serialized
 

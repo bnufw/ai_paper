@@ -10,7 +10,7 @@ class VenueConfig:
     display_name: str
     venue_id_template: str  # e.g. "NeurIPS.cc/{year}/Conference"
     min_year: int = 2024  # earliest supported year
-    data_source: str = "openreview"  # "openreview" or "cvf"
+    data_source: str = "openreview"  # "openreview", "cvf", "semantic_scholar", or "aaai_ojs"
 
 
 # Supported conferences
@@ -47,7 +47,7 @@ VENUES: dict[str, VenueConfig] = {
         name="AAAI",
         display_name="AAAI",
         venue_id_template="AAAI.org/{year}/Conference",
-        data_source="semantic_scholar",
+        data_source="aaai_ojs",
     ),
 }
 

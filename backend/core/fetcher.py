@@ -10,6 +10,7 @@ import openreview
 from loguru import logger
 
 from .venues import get_venue_id, VENUES
+from .aaai_ojs_fetcher import fetch_aaai_ojs_papers
 from .cvf_fetcher import fetch_cvf_papers
 from .semantic_scholar_fetcher import fetch_semantic_scholar_papers
 
@@ -179,7 +180,9 @@ def fetch_papers(
     venue_config = VENUES[venue]
     data_source = venue_config.data_source
 
-    if data_source == "cvf":
+    if data_source == "aaai_ojs":
+        papers = fetch_aaai_ojs_papers(venue, year, progress_callback=progress_callback)
+    elif data_source == "cvf":
         papers = fetch_cvf_papers(venue, year, progress_callback=progress_callback)
     elif data_source == "semantic_scholar":
         papers = fetch_semantic_scholar_papers(venue, year, progress_callback=progress_callback)
