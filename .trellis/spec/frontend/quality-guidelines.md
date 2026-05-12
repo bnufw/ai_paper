@@ -116,3 +116,64 @@ if (!contentType.toLowerCase().includes('text/event-stream')) {
   return response.json() as Promise<T>
 }
 ```
+
+## Scenario: Idea Session File Loading Fallback
+
+### 1. Scope / Trigger
+
+- Trigger: Idea history/detail code loads generated files from File System Access API handles.
+- Apply when changing `src/hooks/useIdeaChat.ts`, `src/components/idea/*`, or `src/services/idea/workflowStorage.ts`.
+
+### 2. Signatures
+
+- `useIdeaChat(session: IdeaSession | null)` exposes `bestIdea`, `allIdeas`, `currentIdeaSlug`, and `contextReady`.
+- `readBestIdea(sessionDir) -> Promise<string | null>` reads `best_idea.md`.
+- `readAllIdeas(sessionDir) -> Promise<IdeaEntry[]>` reads `ideas/idea_{index}_{slug}.md` and sorts by numeric index.
+
+### 3. Contracts
+
+- `best_idea.md` is optional for viewing a session.
+- Candidate idea files under `ideas/` are valid display content even when `best_idea.md` is absent or empty.
+- Default selection should be `best_idea` only when it has non-whitespace content; otherwise select the first non-empty candidate idea.
+- Chat context may be built from Best Idea, candidate ideas, or both.
+
+### 4. Validation & Error Matrix
+
+- No session -> clear Idea state.
+- Missing directory permission -> `contextReady: false` with an access error.
+- Missing or empty `best_idea.md` plus readable candidate ideas -> `contextReady: true`.
+- Missing or empty `best_idea.md` plus no readable candidate ideas -> `contextReady: false` with an empty-content error.
+
+### 5. Good/Base/Bad Cases
+
+- Good: Session has `best_idea.md` and candidates; UI opens Best Idea and keeps candidates selectable.
+- Base: Session has only candidate files; UI opens the first readable candidate and prepares chat context.
+- Bad: Loader returns early after `readBestIdea()` returns `null`, leaving existing candidate files invisible.
+
+### 6. Tests Required
+
+- Type-check/build after any change to this flow.
+- Manual or automated regression for a session with candidates but no readable `best_idea.md`.
+- Manual or automated regression for a session with readable `best_idea.md`.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+if (!bestIdea) {
+  setState(prev => ({ ...prev, contextReady: false }))
+  return
+}
+```
+
+#### Correct
+
+```typescript
+const readableBestIdea = bestIdea?.trim() ? bestIdea : null
+const readableIdeas = allIdeas.filter(idea => idea.content.trim())
+if (!readableBestIdea && readableIdeas.length === 0) {
+  setState(prev => ({ ...prev, contextReady: false }))
+  return
+}
+```

@@ -72,6 +72,7 @@ export function useIdeaChat(session: IdeaSession | null) {
       streamingStartTime: null,
       bestIdea: null,
       allIdeas: [],
+      currentIdeaSlug: 'best_idea',
       contextReady: false,
       error: ''
     }))
@@ -98,18 +99,23 @@ export function useIdeaChat(session: IdeaSession | null) {
 
         if (cancelled) return
 
-        if (!bestIdea) {
-          setState(prev => ({ ...prev, contextReady: false, error: 'best_idea 内容为空' }))
+        const readableBestIdea = bestIdea?.trim() ? bestIdea : null
+        const readableIdeas = allIdeas.filter(idea => idea.content.trim())
+
+        if (!readableBestIdea && readableIdeas.length === 0) {
+          setState(prev => ({ ...prev, contextReady: false, error: 'Idea 内容为空' }))
           return
         }
 
         // 构建上下文：best_idea + 所有 ideas
         const contextParts: string[] = []
-        contextParts.push(`# 当前最佳 Idea\n\n${bestIdea}`)
+        if (readableBestIdea) {
+          contextParts.push(`# 当前最佳 Idea\n\n${readableBestIdea}`)
+        }
 
         // 添加所有候选 ideas（使用索引编号）
-        if (allIdeas.length > 0) {
-          const ideasContent = allIdeas
+        if (readableIdeas.length > 0) {
+          const ideasContent = readableIdeas
             .map(idea => `## Idea ${idea.index}\n\n${idea.content}`)
             .join('\n\n')
           contextParts.push(`# 所有候选 Ideas\n\n${ideasContent}`)
@@ -120,9 +126,9 @@ export function useIdeaChat(session: IdeaSession | null) {
         setState(prev => ({
           ...prev,
           messages: savedMessages,
-          bestIdea,
+          bestIdea: readableBestIdea,
           allIdeas,
-          currentIdeaSlug: 'best_idea',
+          currentIdeaSlug: readableBestIdea ? 'best_idea' : `idea_${readableIdeas[0].index}`,
           contextReady: true,
           error: ''
         }))
@@ -143,7 +149,7 @@ export function useIdeaChat(session: IdeaSession | null) {
     return () => {
       cancelled = true
     }
-  }, [session?.id])
+  }, [session?.id, session?.localPath])
 
   // 切换显示的 idea
   const setCurrentIdeaSlug = useCallback((slug: string) => {

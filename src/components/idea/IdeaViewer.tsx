@@ -25,9 +25,13 @@ export default function IdeaViewer({
   allIdeas,
   onIdeaChange
 }: IdeaViewerProps) {
+  const hasBestIdea = Boolean(bestIdea?.trim())
+
   // 构建选项列表：显示 "Idea 1 (模型名)"
   const options = [
-    { value: 'best_idea', label: '🏆 Best Idea' },
+    ...(hasBestIdea || currentIdeaSlug === 'best_idea'
+      ? [{ value: 'best_idea', label: '🏆 Best Idea' }]
+      : []),
     ...allIdeas.map(idea => ({
       value: `idea_${idea.index}`,
       label: `💡 Idea ${idea.index} (${idea.slug})`
@@ -49,6 +53,7 @@ export default function IdeaViewer({
   }
 
   const currentContent = getCurrentContent()
+  const hasCurrentContent = Boolean(currentContent?.trim())
 
   return (
     <div className="h-full flex flex-col bg-white">
@@ -75,13 +80,13 @@ export default function IdeaViewer({
 
       {/* 内容区域 */}
       <div className="flex-1 overflow-y-auto p-6">
-        {currentContent ? (
+        {hasCurrentContent ? (
           <div className="prose prose-sm max-w-none">
             <ReactMarkdown
               remarkPlugins={[remarkMath, remarkGfm]}
               rehypePlugins={[rehypeKatex, rehypeHighlight]}
             >
-              {currentContent}
+              {currentContent ?? ''}
             </ReactMarkdown>
           </div>
         ) : (
