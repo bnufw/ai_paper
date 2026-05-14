@@ -7,8 +7,15 @@ import {
 import { processAndSavePaper } from '../../services/paper/importPaper'
 import { fetchPdfFile } from '../../services/pdf/pdfFetcher'
 import { searchApi } from '../../services/search/searchApi'
+import {
+  clearSearchHistory,
+  deleteSearchHistory,
+  listSearchHistory,
+  saveSearchHistory
+} from '../../services/search/searchHistory'
 import type {
   JobStatus,
+  SearchHistoryRecord,
   SearchPaper,
   SearchProgress,
   Venue
@@ -17,8 +24,6 @@ import type {
 interface SearchImportTabProps {
   onImportComplete: (paperId: number) => void
 }
-
-type SearchMode = 'single' | 'multi'
 
 const FALLBACK_VENUES: Venue[] = [
   { name: 'NeurIPS', display_name: 'NeurIPS', min_year: 2024, status: {} },
@@ -41,6 +46,8 @@ const IMPORT_SOURCE_HOST_SUFFIXES = [
   'aaai.org',
   'doi.org'
 ] as const
+
+const DEFAULT_SEARCH_YEARS = [2026, 2025]
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError'
@@ -72,6 +79,52 @@ function statusClass(status: JobStatus | null, readyFlag?: boolean): string {
   return 'text-gray-500'
 }
 
+function statusKey(venue: string, year: number): string {
+  return `${venue}_${year}`
+}
+
+function yearStatus(venue: Venue, year: number) {
+  return venue.status[String(year)]
+}
+
+function getLocalDataYears(venues: Venue[]): number[] {
+  const years = new Set<number>()
+  venues.forEach(venue => {
+    Object.entries(venue.status).forEach(([year, status]) => {
+      if (status.fetched || status.indexed) {
+        years.add(Number(year))
+      }
+    })
+  })
+  return Array.from(years).filter(Number.isFinite).sort((a, b) => b - a)
+}
+
+function getDefaultSearchYears(searchYears: number[]): number[] {
+  const preferredYears = DEFAULT_SEARCH_YEARS.filter(year => searchYears.includes(year))
+  return preferredYears.length > 0 ? preferredYears : searchYears.slice(0, 2)
+}
+
+function hasLocalSearchData(venue: Venue, year: number): boolean {
+  const status = yearStatus(venue, year)
+  return Boolean(status?.fetched || status?.indexed)
+}
+
+function metadataText(venue: Venue, year: number): string {
+  const status = yearStatus(venue, year)
+  if (!status?.fetched) return '未获取'
+  return status.total_papers != null ? `${status.total_papers.toLocaleString()} 篇` : '已获取'
+}
+
+function indexText(status: JobStatus | null, indexed?: boolean): string {
+  if (status?.status === 'running') {
+    const count = status.total ? ` ${status.progress || 0}/${status.total}` : ''
+    return `${status.message || '运行中'}${count}`
+  }
+  if (status?.status === 'error') return status.message || '失败'
+  if (indexed || status?.indexed || status?.status === 'done') return '已索引'
+  return '未索引'
+}
+
 function scorePercent(score: number): number {
   return Math.max(0, Math.min(100, Math.round(score * 100)))
 }
@@ -93,16 +146,63 @@ function getImportSourceUrl(paper: SearchPaper): string {
   return forumUrl && isImportableSourceUrl(forumUrl) ? forumUrl : ''
 }
 
-function latestReadyYear(venue: Venue | undefined, fallbackYears: number[]): number {
-  const status = venue?.status ?? {}
-  const yearsByState = (key: keyof Venue['status'][string]) =>
-    Object.entries(status)
-      .filter(([, value]) => value[key])
-      .map(([year]) => Number(year))
-      .filter(Number.isFinite)
-      .sort((a, b) => b - a)
+function selectedHistoryVenues(venues: Venue[], selectedVenues: string[], years: number[]) {
+  return selectedVenues.map(name => {
+    const venue = venues.find(item => item.name === name)
+    const localYears = venue
+      ? years.filter(year => hasLocalSearchData(venue, year))
+      : []
+    return {
+      venue: name,
+      display_name: venue?.display_name || name,
+      years: localYears,
+      fetched: venue ? localYears.some(year => Boolean(yearStatus(venue, year)?.fetched)) : false,
+      indexed: venue ? localYears.some(year => Boolean(yearStatus(venue, year)?.indexed)) : false,
+      total_papers: venue
+        ? localYears.reduce((total, year) => total + (yearStatus(venue, year)?.total_papers || 0), 0)
+        : null
+    }
+  })
+}
 
-  return yearsByState('indexed')[0] || yearsByState('fetched')[0] || fallbackYears[0] || 0
+function formatYears(years: number[]): string {
+  if (years.length === 0) return '未选择年份'
+  return [...years].sort((a, b) => b - a).join('、')
+}
+
+function searchYearOptionText(venues: Venue[], year: number): string {
+  const rows = venues
+    .map(venue => yearStatus(venue, year))
+    .filter(status => status?.fetched || status?.indexed)
+  const indexed = rows.filter(status => status?.indexed).length
+  return `${indexed}/${rows.length} 已索引`
+}
+
+function venueSearchStatusText(venue: Venue, years: number[]): string {
+  return years
+    .filter(year => hasLocalSearchData(venue, year))
+    .map(year => {
+      const status = yearStatus(venue, year)
+      return `${year} ${status?.indexed ? '已索引' : '仅获取'}`
+    })
+    .join('、')
+}
+
+function historyTime(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
+
+function failureMessage(failures: { venue: string; year?: number; stage: string; reason: string }[]): string {
+  return failures
+    .map(failure => `${failure.venue}${failure.year ? ` ${failure.year}` : ''} ${failure.stage}: ${failure.reason}`)
+    .join('\n')
 }
 
 function PaperResultCard({
@@ -246,16 +346,16 @@ export default function SearchImportTab({ onImportComplete }: SearchImportTabPro
   const [venues, setVenues] = useState<Venue[]>([])
   const [groups, setGroups] = useState<PaperGroup[]>([])
   const [selectedGroupId, setSelectedGroupId] = useState<number | undefined>(undefined)
-  const [selectedVenue, setSelectedVenue] = useState('')
-  const [selectedYear, setSelectedYear] = useState(0)
-  const [customYear, setCustomYear] = useState('')
-  const [showCustomYear, setShowCustomYear] = useState(false)
-  const [fetchStatus, setFetchStatus] = useState<JobStatus | null>(null)
-  const [indexStatus, setIndexStatus] = useState<JobStatus | null>(null)
+  const [selectedSearchYears, setSelectedSearchYears] = useState<number[]>([])
+  const [selectedSearchVenues, setSelectedSearchVenues] = useState<string[]>([])
+  const [selectedPrepYear, setSelectedPrepYear] = useState(0)
+  const [customPrepYear, setCustomPrepYear] = useState('')
+  const [showCustomPrepYear, setShowCustomPrepYear] = useState(false)
+  const [fetchStatuses, setFetchStatuses] = useState<Record<string, JobStatus>>({})
+  const [indexStatuses, setIndexStatuses] = useState<Record<string, JobStatus>>({})
   const [polling, setPolling] = useState(false)
   const [dataError, setDataError] = useState('')
 
-  const [searchMode, setSearchMode] = useState<SearchMode>('single')
   const [description, setDescription] = useState('')
   const [topK, setTopK] = useState(25)
   const [useLLM, setUseLLM] = useState(true)
@@ -268,11 +368,14 @@ export default function SearchImportTab({ onImportComplete }: SearchImportTabPro
   const [resultPapers, setResultPapers] = useState<SearchPaper[]>([])
   const [resultSummary, setResultSummary] = useState('')
   const [keywords, setKeywords] = useState<string[]>([])
+  const [searchHistory, setSearchHistory] = useState<SearchHistoryRecord[]>([])
   const [importingPaperId, setImportingPaperId] = useState<string | null>(null)
   const [importProgress, setImportProgress] = useState<{ stage: string; percent: number } | null>(null)
 
   const searchAbortRef = useRef<AbortController | null>(null)
   const isMountedRef = useRef(true)
+  const didInitializeSearchYearsRef = useRef(false)
+  const pendingSearchVenuesRef = useRef<string[] | null>(null)
 
   const loadVenues = useCallback(async (signal?: AbortSignal) => {
     const data = await searchApi.getVenues(signal)
@@ -298,6 +401,12 @@ export default function SearchImportTab({ onImportComplete }: SearchImportTabPro
         setDataError(errorMessage(error, '加载分组失败'))
       })
 
+    listSearchHistory()
+      .then(setSearchHistory)
+      .catch(error => {
+        console.error('加载搜索记录失败:', error)
+      })
+
     return () => controller.abort()
   }, [loadVenues])
 
@@ -309,64 +418,107 @@ export default function SearchImportTab({ onImportComplete }: SearchImportTabPro
     }
   }, [])
 
-  const currentVenue = useMemo(
-    () => venues.find(venue => venue.name === selectedVenue),
-    [selectedVenue, venues]
-  )
+  const searchYears = useMemo(() => getLocalDataYears(venues), [venues])
 
-  const selectableYears = useMemo(() => {
-    const minYear = currentVenue?.min_year ?? 2024
+  const prepYears = useMemo(() => {
+    const minYear = venues.reduce((min, venue) => Math.min(min, venue.min_year), 2024)
     const thisYear = new Date().getFullYear()
     const defaultYears = minYear <= thisYear
       ? Array.from({ length: thisYear - minYear + 1 }, (_, index) => thisYear - index)
       : [minYear]
-    const knownYears = currentVenue ? Object.keys(currentVenue.status).map(Number) : []
+    const knownYears = getLocalDataYears(venues)
 
     return Array.from(new Set([...knownYears, ...defaultYears])).sort((a, b) => b - a)
-  }, [currentVenue])
+  }, [venues])
 
-  const yearStatus = selectedVenue && selectedYear
-    ? currentVenue?.status?.[String(selectedYear)]
-    : undefined
-
-  const preferredYear = useMemo(
-    () => latestReadyYear(currentVenue, selectableYears),
-    [currentVenue, selectableYears]
+  const searchVenueRows = useMemo(
+    () => venues.filter(venue => {
+      return selectedSearchYears.some(year => hasLocalSearchData(venue, year))
+    }),
+    [selectedSearchYears, venues]
   )
 
-  const isYearFetched = Boolean(
-    yearStatus?.fetched || fetchStatus?.cached || fetchStatus?.status === 'done'
+  const selectedVenueYearPairs = useMemo(
+    () => selectedSearchVenues.flatMap(venueName => {
+      const venue = venues.find(item => item.name === venueName)
+      if (!venue) return []
+      return selectedSearchYears
+        .filter(year => hasLocalSearchData(venue, year))
+        .map(year => ({ venue: venueName, year }))
+    }),
+    [selectedSearchVenues, selectedSearchYears, venues]
   )
-  const isYearIndexed = Boolean(
-    yearStatus?.indexed || indexStatus?.indexed || indexStatus?.status === 'done'
+
+  const prepVenueRows = useMemo(
+    () => venues,
+    [venues]
   )
 
   useEffect(() => {
-    if (!selectedVenue && venues.length > 0) {
-      setSelectedVenue(venues[0].name)
-    }
-  }, [selectedVenue, venues])
-
-  useEffect(() => {
-    if (!selectedVenue || selectedYear > 0 || showCustomYear || preferredYear === 0) {
+    if (searchYears.length === 0) {
+      setSelectedSearchYears([])
+      didInitializeSearchYearsRef.current = false
       return
     }
-    setSelectedYear(preferredYear)
-  }, [preferredYear, selectedVenue, selectedYear, showCustomYear])
+
+    setSelectedSearchYears(current => {
+      const availableYears = current.filter(year => searchYears.includes(year))
+      if (!didInitializeSearchYearsRef.current || (current.length > 0 && availableYears.length === 0)) {
+        didInitializeSearchYearsRef.current = true
+        return getDefaultSearchYears(searchYears)
+      }
+      if (availableYears.length !== current.length) return availableYears
+      return current
+    })
+  }, [searchYears])
+
+  useEffect(() => {
+    if (selectedPrepYear === 0) {
+      setSelectedPrepYear(searchYears[0] || new Date().getFullYear())
+    }
+  }, [searchYears, selectedPrepYear])
+
+  useEffect(() => {
+    if (selectedSearchYears.length === 0) {
+      setSelectedSearchVenues([])
+      return
+    }
+
+    if (pendingSearchVenuesRef.current) {
+      setSelectedSearchVenues(pendingSearchVenuesRef.current)
+      pendingSearchVenuesRef.current = null
+      return
+    }
+
+    setSelectedSearchVenues(
+      searchVenueRows
+        .filter(venue => selectedSearchYears.some(year => Boolean(yearStatus(venue, year)?.indexed)))
+        .map(venue => venue.name)
+    )
+  }, [searchVenueRows, selectedSearchYears])
 
   const pollStatus = useCallback(async () => {
-    if (!selectedVenue || !selectedYear) return
+    if (!selectedPrepYear || venues.length === 0) return
 
     try {
-      const [nextFetchStatus, nextIndexStatus] = await Promise.all([
-        searchApi.getFetchStatus(selectedVenue, selectedYear),
-        searchApi.getIndexStatus(selectedVenue, selectedYear)
+      const [nextFetchEntries, nextIndexEntries] = await Promise.all([
+        Promise.all(venues.map(async venue => [
+          statusKey(venue.name, selectedPrepYear),
+          await searchApi.getFetchStatus(venue.name, selectedPrepYear)
+        ] as const)),
+        Promise.all(venues.map(async venue => [
+          statusKey(venue.name, selectedPrepYear),
+          await searchApi.getIndexStatus(venue.name, selectedPrepYear)
+        ] as const))
       ])
       if (!isMountedRef.current) return
-      setFetchStatus(nextFetchStatus)
-      setIndexStatus(nextIndexStatus)
+      const nextFetchStatuses = Object.fromEntries(nextFetchEntries)
+      const nextIndexStatuses = Object.fromEntries(nextIndexEntries)
+      setFetchStatuses(nextFetchStatuses)
+      setIndexStatuses(nextIndexStatuses)
 
-      const running = nextFetchStatus.status === 'running' || nextIndexStatus.status === 'running'
+      const running = [...Object.values(nextFetchStatuses), ...Object.values(nextIndexStatuses)]
+        .some(status => status.status === 'running')
       if (!running && polling) {
         setPolling(false)
         await loadVenues()
@@ -375,12 +527,12 @@ export default function SearchImportTab({ onImportComplete }: SearchImportTabPro
       setDataError(errorMessage(error, '检查数据状态失败'))
       setPolling(false)
     }
-  }, [loadVenues, polling, selectedVenue, selectedYear])
+  }, [loadVenues, polling, selectedPrepYear, venues])
 
   useEffect(() => {
-    if (!selectedVenue || !selectedYear) return
+    if (!selectedPrepYear || venues.length === 0) return
     pollStatus()
-  }, [pollStatus, selectedVenue, selectedYear])
+  }, [pollStatus, selectedPrepYear, venues])
 
   useEffect(() => {
     if (!polling) return
@@ -388,38 +540,38 @@ export default function SearchImportTab({ onImportComplete }: SearchImportTabPro
     return () => window.clearInterval(timer)
   }, [polling, pollStatus])
 
-  const handleYearSelect = (value: string) => {
+  const handlePrepYearSelect = (value: string) => {
     if (value === '__custom__') {
-      setShowCustomYear(true)
-      setSelectedYear(0)
+      setShowCustomPrepYear(true)
+      setSelectedPrepYear(0)
       return
     }
 
-    setShowCustomYear(false)
-    setCustomYear('')
-    setSelectedYear(Number(value))
-    setFetchStatus(null)
-    setIndexStatus(null)
+    setShowCustomPrepYear(false)
+    setCustomPrepYear('')
+    setSelectedPrepYear(Number(value))
+    setFetchStatuses({})
+    setIndexStatuses({})
   }
 
-  const handleCustomYearConfirm = () => {
-    const minYear = currentVenue?.min_year ?? 2024
-    const year = Number(customYear)
+  const handleCustomPrepYearConfirm = () => {
+    const minYear = venues.reduce((min, venue) => Math.min(min, venue.min_year), 2024)
+    const year = Number(customPrepYear)
     if (!Number.isInteger(year) || year < minYear || year > 2100) {
       setDataError(`年份需要在 ${minYear} 到 2100 之间`)
       return
     }
 
     setDataError('')
-    setSelectedYear(year)
-    setShowCustomYear(false)
+    setSelectedPrepYear(year)
+    setShowCustomPrepYear(false)
   }
 
-  const handleFetch = async () => {
-    if (!selectedVenue || !selectedYear) return
+  const handleFetch = async (venueName: string) => {
+    if (!venueName || !selectedPrepYear) return
     setDataError('')
     try {
-      await searchApi.fetchPapers(selectedVenue, selectedYear, Boolean(yearStatus?.fetched))
+      await searchApi.fetchPapers(venueName, selectedPrepYear, false)
       setPolling(true)
       await pollStatus()
     } catch (error) {
@@ -427,11 +579,11 @@ export default function SearchImportTab({ onImportComplete }: SearchImportTabPro
     }
   }
 
-  const handleIndex = async () => {
-    if (!selectedVenue || !selectedYear) return
+  const handleIndex = async (venueName: string) => {
+    if (!venueName || !selectedPrepYear) return
     setDataError('')
     try {
-      await searchApi.buildIndex(selectedVenue, selectedYear, Boolean(yearStatus?.indexed))
+      await searchApi.buildIndex(venueName, selectedPrepYear, false)
       setPolling(true)
       await pollStatus()
     } catch (error) {
@@ -439,8 +591,53 @@ export default function SearchImportTab({ onImportComplete }: SearchImportTabPro
     }
   }
 
+  const toggleSearchVenue = (venueName: string) => {
+    setSelectedSearchVenues(current =>
+      current.includes(venueName)
+        ? current.filter(name => name !== venueName)
+        : [...current, venueName]
+    )
+  }
+
+  const toggleSearchYear = (year: number) => {
+    setSelectedSearchYears(current => (
+      current.includes(year)
+        ? current.filter(item => item !== year)
+        : [...current, year].sort((a, b) => b - a)
+    ))
+  }
+
+  const restoreHistory = (record: SearchHistoryRecord) => {
+    searchAbortRef.current?.abort()
+    const restoredVenues = record.venues.map(venue => venue.venue)
+    pendingSearchVenuesRef.current = restoredVenues
+    setSelectedSearchYears(record.years)
+    setSelectedSearchVenues(restoredVenues)
+    setDescription(record.query)
+    setTopK(record.topK)
+    setUseLLM(record.useLLM)
+    setUseChineseReason(record.useChineseReason)
+    setUseBilingualTranslation(record.useBilingualTranslation)
+    setResultPapers(record.papers)
+    setResultSummary(record.resultSummary)
+    setKeywords(record.keywords)
+    setSearchError('')
+    setProgress(null)
+    setSearching(false)
+  }
+
+  const handleDeleteHistory = async (recordId: string) => {
+    setSearchHistory(await deleteSearchHistory(recordId))
+  }
+
+  const handleClearHistory = async () => {
+    await clearSearchHistory()
+    setSearchHistory([])
+  }
+
   const handleSearch = async () => {
-    if (!description.trim()) return
+    const query = description.trim()
+    if (!query || selectedVenueYearPairs.length === 0) return
 
     searchAbortRef.current?.abort()
     const controller = new AbortController()
@@ -454,43 +651,47 @@ export default function SearchImportTab({ onImportComplete }: SearchImportTabPro
     setKeywords([])
 
     try {
-      if (searchMode === 'single') {
-        const result = await searchApi.search(
-          {
-            venue: selectedVenue,
-            year: selectedYear,
-            research_description: description.trim(),
-            top_k: topK,
-            use_llm_eval: useLLM,
-            use_chinese_relevance_reason: useChineseReason,
-            use_bilingual_translation: useBilingualTranslation
-          },
-          setProgress,
-          controller.signal
-        )
-        setResultPapers(result.papers)
-        setResultSummary(`${selectedVenue} ${selectedYear} · ${result.total_candidates.toLocaleString()} 个候选 · ${result.papers.length} 个结果`)
-        setKeywords(result.keywords)
-      } else {
-        const result = await searchApi.multiSearch(
-          {
-            research_description: description.trim(),
-            auto_latest: true,
-            top_k: topK,
-            use_llm_eval: useLLM,
-            use_chinese_relevance_reason: useChineseReason,
-            use_bilingual_translation: useBilingualTranslation
-          },
-          setProgress,
-          controller.signal
-        )
-        const papers = result.venues
-          .flatMap(venue => venue.papers)
-          .sort((a, b) => b.relevance_score - a.relevance_score)
-        setResultPapers(papers)
-        setResultSummary(`${result.summary.successful_venues} 个会议 · ${result.summary.returned_papers} 个结果 · ${result.summary.failed_venues} 个失败`)
-        setKeywords(result.keywords)
+      const result = await searchApi.multiSearch(
+        {
+          research_description: query,
+          auto_latest: false,
+          venues: selectedVenueYearPairs,
+          top_k: topK,
+          use_llm_eval: useLLM,
+          use_chinese_relevance_reason: useChineseReason,
+          use_bilingual_translation: useBilingualTranslation
+        },
+        setProgress,
+        controller.signal
+      )
+
+      if (result.failures.length > 0) {
+        throw new Error(failureMessage(result.failures))
       }
+
+      const papers = result.venues
+        .flatMap(venue => venue.papers)
+        .sort((a, b) => b.relevance_score - a.relevance_score)
+        .slice(0, topK)
+      const pairYears = Array.from(new Set(selectedVenueYearPairs.map(pair => pair.year))).sort((a, b) => b - a)
+      const pairVenues = Array.from(new Set(selectedVenueYearPairs.map(pair => pair.venue)))
+      const summary = `${formatYears(pairYears)} · ${pairVenues.length} 个会议 · ${selectedVenueYearPairs.length} 个数据集 · ${papers.length} 个结果`
+
+      setResultPapers(papers)
+      setResultSummary(summary)
+      setKeywords(result.keywords)
+      setSearchHistory(await saveSearchHistory({
+        query,
+        years: selectedSearchYears,
+        venues: selectedHistoryVenues(venues, selectedSearchVenues, selectedSearchYears),
+        topK,
+        useLLM,
+        useChineseReason,
+        useBilingualTranslation,
+        resultSummary: summary,
+        keywords: result.keywords,
+        papers
+      }))
     } catch (error) {
       if (!isAbortError(error)) {
         setSearchError(errorMessage(error, '搜索失败'))
@@ -565,12 +766,10 @@ export default function SearchImportTab({ onImportComplete }: SearchImportTabPro
     }
   }
 
-  const canSearchSingle = Boolean(
-    selectedVenue && selectedYear > 0 && description.trim().length >= 3 && isYearFetched
+  const canSearch = Boolean(
+    selectedVenueYearPairs.length > 0 && description.trim().length >= 3
   )
-  const canSearchMulti = description.trim().length >= 3
-  const canSearch = searchMode === 'single' ? canSearchSingle : canSearchMulti
-  const yearSelectValue = selectedYear || preferredYear || selectableYears[0] || ''
+  const prepYearSelectValue = selectedPrepYear || prepYears[0] || ''
 
   return (
     <div className="space-y-6">
@@ -606,99 +805,83 @@ export default function SearchImportTab({ onImportComplete }: SearchImportTabPro
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">会议</label>
-                <select
-                  value={selectedVenue}
-                  onChange={event => {
-                    setSelectedVenue(event.target.value)
-                    setSelectedYear(0)
-                    setFetchStatus(null)
-                    setIndexStatus(null)
-                    setShowCustomYear(false)
-                    setCustomYear('')
-                  }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            <label className="block text-sm font-medium text-gray-700 mb-2">年份</label>
+            {showCustomPrepYear ? (
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  value={customPrepYear}
+                  onChange={event => setCustomPrepYear(event.target.value)}
+                  onKeyDown={event => event.key === 'Enter' && handleCustomPrepYearConfirm()}
+                  className="min-w-0 flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  onClick={handleCustomPrepYearConfirm}
+                  className="px-3 py-2 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700"
                 >
-                  <option value="">选择会议</option>
-                  {venues.map(venue => (
-                    <option key={venue.name} value={venue.name}>
-                      {venue.display_name}
-                    </option>
-                  ))}
-                </select>
+                  OK
+                </button>
               </div>
+            ) : (
+              <select
+                value={prepYearSelectValue}
+                onChange={event => handlePrepYearSelect(event.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {prepYears.map(year => (
+                  <option key={year} value={year}>
+                    {year}
+                  </option>
+                ))}
+                <option value="__custom__">添加年份</option>
+              </select>
+            )}
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">年份</label>
-                {showCustomYear ? (
-                  <div className="flex gap-2">
-                    <input
-                      type="number"
-                      value={customYear}
-                      onChange={event => setCustomYear(event.target.value)}
-                      onKeyDown={event => event.key === 'Enter' && handleCustomYearConfirm()}
-                      className="min-w-0 flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    <button
-                      onClick={handleCustomYearConfirm}
-                      className="px-3 py-2 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700"
-                    >
-                      OK
-                    </button>
-                  </div>
-                ) : (
-                  <select
-                    value={yearSelectValue}
-                    onChange={event => handleYearSelect(event.target.value)}
-                    disabled={!selectedVenue}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
-                  >
-                    {selectableYears.map(year => (
-                      <option key={year} value={year}>
-                        {year}
-                      </option>
-                    ))}
-                    <option value="__custom__">添加年份</option>
-                  </select>
-                )}
-              </div>
-            </div>
+            {selectedPrepYear > 0 && (
+              <div className="mt-4 space-y-2">
+                {prepVenueRows.map(venue => {
+                  const status = yearStatus(venue, selectedPrepYear)
+                  const key = statusKey(venue.name, selectedPrepYear)
+                  const fetchStatus = fetchStatuses[key] || null
+                  const indexStatus = indexStatuses[key] || null
+                  const fetched = Boolean(status?.fetched || fetchStatus?.cached || fetchStatus?.status === 'done')
+                  const indexed = Boolean(status?.indexed || indexStatus?.indexed || indexStatus?.status === 'done')
 
-            {selectedVenue && selectedYear > 0 && (
-              <div className="mt-4 space-y-3">
-                <div className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
-                  <div>
-                    <div className="text-sm font-medium text-gray-700">获取论文</div>
-                    <div className={`text-xs mt-1 ${statusClass(fetchStatus, yearStatus?.fetched)}`}>
-                      {statusText(fetchStatus, 'fetch')}
+                  return (
+                    <div key={venue.name} className="flex items-center justify-between gap-3 bg-gray-50 rounded-lg p-3">
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-gray-700">{venue.display_name}</div>
+                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+                          <span className={statusClass(fetchStatus, fetched)}>
+                            {fetchStatus?.status === 'running' ? statusText(fetchStatus, 'fetch') : metadataText(venue, selectedPrepYear)}
+                          </span>
+                          <span className={statusClass(indexStatus, indexed)}>
+                            {indexText(indexStatus, indexed)}
+                          </span>
+                        </div>
+                      </div>
+                      {!fetched ? (
+                        <button
+                          onClick={() => handleFetch(venue.name)}
+                          disabled={fetchStatus?.status === 'running' || polling}
+                          className="shrink-0 px-3 py-2 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                        >
+                          获取
+                        </button>
+                      ) : !indexed ? (
+                        <button
+                          onClick={() => handleIndex(venue.name)}
+                          disabled={indexStatus?.status === 'running' || polling}
+                          className="shrink-0 px-3 py-2 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                        >
+                          构建
+                        </button>
+                      ) : (
+                        <span className="shrink-0 text-xs font-medium text-green-700">已固定</span>
+                      )}
                     </div>
-                  </div>
-                  <button
-                    onClick={handleFetch}
-                    disabled={fetchStatus?.status === 'running' || polling}
-                    className="px-3 py-2 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
-                  >
-                    {isYearFetched ? '重新获取' : '获取'}
-                  </button>
-                </div>
-
-                <div className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
-                  <div>
-                    <div className="text-sm font-medium text-gray-700">构建索引</div>
-                    <div className={`text-xs mt-1 ${statusClass(indexStatus, yearStatus?.indexed)}`}>
-                      {statusText(indexStatus, 'index')}
-                    </div>
-                  </div>
-                  <button
-                    onClick={handleIndex}
-                    disabled={!isYearFetched || indexStatus?.status === 'running' || polling}
-                    className="px-3 py-2 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
-                  >
-                    {isYearIndexed ? '重建' : '构建'}
-                  </button>
-                </div>
+                  )
+                })}
               </div>
             )}
 
@@ -708,58 +891,134 @@ export default function SearchImportTab({ onImportComplete }: SearchImportTabPro
               </div>
             )}
           </section>
+
+          <section className="bg-white border border-gray-200 rounded-lg p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-semibold text-gray-800">搜索记录</h2>
+              {searchHistory.length > 0 && (
+                <button
+                  onClick={handleClearHistory}
+                  className="text-xs text-gray-500 hover:text-red-600"
+                >
+                  清空
+                </button>
+              )}
+            </div>
+
+            {searchHistory.length > 0 ? (
+              <div className="space-y-2">
+                {searchHistory.map(record => (
+                  <div
+                    key={record.id}
+                    className="border border-gray-200 rounded-lg p-3 hover:border-blue-300 transition-colors"
+                  >
+                    <button
+                      onClick={() => restoreHistory(record)}
+                      className="w-full text-left"
+                    >
+                      <div className="text-sm font-medium text-gray-800 line-clamp-2">{record.query}</div>
+                      <div className="mt-1 text-xs text-gray-500">
+                        {formatYears(record.years)} · {record.venues.length} 个会议 · {record.papers.length} 个结果
+                      </div>
+                      <div className="mt-1 text-xs text-gray-400">{historyTime(record.createdAt)}</div>
+                    </button>
+                    <button
+                      onClick={() => handleDeleteHistory(record.id)}
+                      className="mt-2 text-xs text-gray-500 hover:text-red-600"
+                    >
+                      删除
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="py-6 text-center text-gray-400 text-sm">暂无搜索记录</div>
+            )}
+          </section>
         </div>
 
         <section className="bg-white border border-gray-200 rounded-lg p-5">
-          <div className="flex items-center justify-between gap-4 mb-4">
+          <div className="mb-4">
             <h2 className="text-base font-semibold text-gray-800">搜索论文</h2>
-            <div className="flex bg-gray-100 rounded-lg p-1">
-              <button
-                onClick={() => setSearchMode('single')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                  searchMode === 'single'
-                    ? 'bg-white text-blue-600 shadow-sm'
-                    : 'text-gray-600 hover:text-gray-800'
-                }`}
-              >
-                单会场
-              </button>
-              <button
-                onClick={() => setSearchMode('multi')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                  searchMode === 'multi'
-                    ? 'bg-white text-blue-600 shadow-sm'
-                    : 'text-gray-600 hover:text-gray-800'
-                }`}
-              >
-                多会场最新
-              </button>
+          </div>
+
+          <div className="space-y-4 mb-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">年份</label>
+              {searchYears.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {searchYears.map(year => {
+                    const checked = selectedSearchYears.includes(year)
+                    return (
+                      <label
+                        key={year}
+                        className={`flex items-center gap-2 px-3 py-2 border rounded-lg text-sm cursor-pointer ${
+                          checked ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:border-blue-300'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleSearchYear(year)}
+                          className="h-4 w-4"
+                        />
+                        <span>{year}</span>
+                        <span className="text-xs text-gray-500">{searchYearOptionText(venues, year)}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-400">
+                  暂无本地数据年份
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">会议</label>
+              {searchVenueRows.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {searchVenueRows.map(venue => {
+                    const checked = selectedSearchVenues.includes(venue.name)
+                    return (
+                      <label
+                        key={venue.name}
+                        className={`flex items-center gap-2 px-3 py-2 border rounded-lg text-sm cursor-pointer ${
+                          checked ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:border-blue-300'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleSearchVenue(venue.name)}
+                          className="h-4 w-4"
+                        />
+                        <span>{venue.display_name}</span>
+                        <span className="text-xs text-gray-500">
+                          {venueSearchStatusText(venue, selectedSearchYears)}
+                        </span>
+                      </label>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-400">
+                  暂无可搜索会议
+                </div>
+              )}
             </div>
           </div>
 
-          {searchMode === 'single' && selectedVenue && selectedYear > 0 && (
-            <div className="mb-4">
-              {!isYearFetched && (
-                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                  当前会议年份需要先获取论文。
-                </p>
-              )}
-              {isYearFetched && !isYearIndexed && (
-                <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
-                  已获取论文，尚未构建向量索引；搜索会退化为关键词为主。
-                </p>
-              )}
-              {isYearFetched && isYearIndexed && (
-                <p className="text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
-                  当前会议年份已准备好。
-                </p>
-              )}
+          {selectedSearchYears.length === 0 && searchYears.length > 0 && (
+            <div className="mb-4 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              至少选择一个年份。
             </div>
           )}
 
-          {searchMode === 'multi' && (
-            <div className="mb-4 text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-              多会场模式会搜索每个会议已有本地数据的最新年份，优先使用向量索引。
+          {selectedSearchYears.length > 0 && selectedVenueYearPairs.length === 0 && (
+            <div className="mb-4 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              至少选择一个有本地数据的会议年份组合。
             </div>
           )}
 

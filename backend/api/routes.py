@@ -140,13 +140,17 @@ def list_venues() -> list[dict]:
         cached_years = list_cached_years(v["name"])
         indexed_years = list_indexed_years(v["name"])
         all_years = sorted(set(cached_years) | set(indexed_years))
-        v["status"] = {
-            str(y): {
+        status = {}
+        for y in all_years:
+            meta = get_cache_metadata(v["name"], y) if y in cached_years else None
+            status[str(y)] = {
                 "fetched": y in cached_years,
                 "indexed": y in indexed_years,
+                "total_papers": meta.get("total_papers") if meta else None,
+                "fetch_date": meta.get("fetch_date") if meta else None,
+                "file_size_mb": meta.get("file_size_mb") if meta else None,
             }
-            for y in all_years
-        }
+        v["status"] = status
     return venues
 
 

@@ -166,7 +166,7 @@ def search_multi_venues(
     all_keywords = kw_result["all_terms"]
 
     venue_results: list[dict[str, Any]] = []
-    failures: list[dict[str, str]] = []
+    failures: list[dict[str, Any]] = []
 
     for venue, year in venue_year_pairs:
         if progress_callback:
@@ -207,6 +207,7 @@ def search_multi_venues(
             logger.exception(f"Multi-venue search failed for {venue} {year}: {exc}")
             failures.append({
                 "venue": venue,
+                "year": year,
                 "stage": "search",
                 "reason": str(exc),
             })

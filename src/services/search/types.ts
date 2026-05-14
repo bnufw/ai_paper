@@ -1,6 +1,9 @@
 export interface VenueStatus {
   fetched: boolean
   indexed: boolean
+  total_papers?: number | null
+  fetch_date?: string | null
+  file_size_mb?: number | null
 }
 
 export interface Venue {
@@ -49,7 +52,7 @@ export interface MultiSearchResult {
   keywords: string[]
   expanded_keywords: string[]
   venues: VenueResult[]
-  failures: { venue: string; stage: string; reason: string }[]
+  failures: { venue: string; year?: number; stage: string; reason: string }[]
   summary: {
     requested_venues: number
     successful_venues: number
@@ -86,4 +89,28 @@ export interface JobStatus {
     venue: string
     year: number
   }
+}
+
+export interface SearchHistoryVenue {
+  venue: string
+  display_name: string
+  years: number[]
+  fetched: boolean
+  indexed: boolean
+  total_papers?: number | null
+}
+
+export interface SearchHistoryRecord {
+  id: string
+  createdAt: string
+  query: string
+  years: number[]
+  venues: SearchHistoryVenue[]
+  topK: number
+  useLLM: boolean
+  useChineseReason: boolean
+  useBilingualTranslation: boolean
+  resultSummary: string
+  keywords: string[]
+  papers: SearchPaper[]
 }

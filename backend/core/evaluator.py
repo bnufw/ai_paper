@@ -77,8 +77,18 @@ def _parse_score(response_text: str) -> dict[str, Any]:
 
     # Fallback: try to extract score with regex
     score_match = re.search(r'"relevance_score"\s*:\s*([0-9.]+)', response_text)
-    score = float(score_match.group(1)) if score_match else 0.0
-    return {"relevance_score": score, "relevance_reason": ""}
+    if score_match:
+        return {"relevance_score": float(score_match.group(1)), "relevance_reason": ""}
+
+    return {"relevance_reason": ""}
+
+
+def _fallback_score(paper: dict) -> float:
+    """Use retrieval fusion score when LLM scoring is unavailable."""
+    try:
+        return max(0.0, min(1.0, float(paper.get("rrf_score") or 0.0)))
+    except (TypeError, ValueError):
+        return 0.0
 
 
 async def _evaluate_single(
@@ -107,12 +117,14 @@ async def _evaluate_single(
         try:
             text = await ainvoke_text(messages, model=model, temperature=0.0, max_tokens=200)
             parsed = _parse_score(text)
-            relevance_score = max(0.0, min(1.0, float(parsed.get("relevance_score", 0.0))))
+            if "relevance_score" not in parsed:
+                raise ValueError("LLM response did not include relevance_score")
+            relevance_score = max(0.0, min(1.0, float(parsed["relevance_score"])))
             relevance_reason = parsed.get("relevance_reason", "")
         except Exception as e:
             logger.warning(f"LLM eval failed for '{title[:50]}': {e}")
-            relevance_score = 0.0
-            relevance_reason = ""
+            relevance_score = _fallback_score(paper)
+            relevance_reason = "LLM 评分失败，暂用检索排序分。"
 
         result = paper.copy()
         result["relevance_score"] = relevance_score
