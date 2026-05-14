@@ -93,7 +93,7 @@ export default function IdeaSessionList({
 
       {/* 列表 */}
       {expanded && (
-        <div className="pl-4 space-y-1 pb-2">
+        <div className="pl-4 pr-2 space-y-1 pb-2 max-h-60 overflow-y-auto">
           {sessions.map(session => (
             <div
               key={session.id}
