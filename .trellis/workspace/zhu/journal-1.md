@@ -74,3 +74,36 @@ Fixed Idea detail loading so candidate idea files remain visible when best_idea.
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: Year-based paper search filters
+
+**Date**: 2026-05-14
+**Task**: Year-based paper search filters
+**Branch**: `main`
+
+### Summary
+
+Changed paper search to multi-select years and venues, defaulting local 2025 and 2026 when available, with explicit venue-year multi-search pairs and multi-year history snapshots.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `27b2fb9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
