@@ -100,7 +100,7 @@ def build_index(
         ids.append(paper["id"])
 
     # Create vectorstore in batches
-    batch_size = 500
+    batch_size = 64
     collection_name = get_collection_name(venue, year)
 
     vectorstore = None
