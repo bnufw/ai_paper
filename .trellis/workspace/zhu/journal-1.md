@@ -107,3 +107,41 @@ Changed paper search to multi-select years and venues, defaulting local 2025 and
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: Paper group move local file sync
+
+**Date**: 2026-05-18
+**Task**: Paper group move local file sync
+**Branch**: `main`
+
+### Summary
+
+Added per-paper group move UI and made paper group moves synchronize local File System Access API directories before IndexedDB updates.
+
+### Main Changes
+
+- Added a per-paper move-to-group selector in the sidebar group list.
+- Updated `movePaperToGroup` so papers with `localPath` move their local directory before IndexedDB metadata changes.
+- Added target-directory conflict protection to prevent accidental folder merges.
+- Documented the Paper group move and local file sync contract in frontend quality specs.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2d0e115` | (see git log) |
+
+### Testing
+
+- [OK] `npm run build`
+- [OK] `git diff --check`
+- [WARN] Manual browser move checks were not run in this headless session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
