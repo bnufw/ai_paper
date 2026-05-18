@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { type Paper, type PaperGroup } from '../../services/storage/db'
 import GroupNoteModal from '../note/GroupNoteModal'
 import DomainKnowledgeModal from '../knowledge/DomainKnowledgeModal'
@@ -9,7 +9,7 @@ interface GroupListProps {
   currentPaperId: number | null
   onSelectPaper: (paperId: number) => void
   onDeletePaper: (paperId: number) => void
-  onCreateGroup: () => void
+  onCreateGroup: (name: string) => void
   onRenameGroup: (groupId: number, newName: string) => void
   onDeleteGroup: (groupId: number) => void
   onMovePaper?: (paperId: number, groupId?: number) => Promise<void> | void
@@ -33,10 +33,13 @@ export default function GroupList({
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set())
   const [editingGroupId, setEditingGroupId] = useState<number | null>(null)
   const [editingName, setEditingName] = useState('')
+  const [creatingGroup, setCreatingGroup] = useState(false)
+  const [newGroupName, setNewGroupName] = useState('')
   const [noteModalGroup, setNoteModalGroup] = useState<string | null>(null)
   const [knowledgeModalGroup, setKnowledgeModalGroup] = useState<{ id: number; name: string } | null>(null)
   const [movingPaperId, setMovingPaperId] = useState<number | null>(null)
   const [movingBusyPaperId, setMovingBusyPaperId] = useState<number | null>(null)
+  const createHandledRef = useRef(false)
 
   // 切换分组展开/折叠
   const toggleGroup = (groupId: number) => {
@@ -63,6 +66,22 @@ export default function GroupList({
     }
     setEditingGroupId(null)
     setEditingName('')
+  }
+
+  const finishCreateGroup = () => {
+    if (createHandledRef.current) return
+    createHandledRef.current = true
+    if (newGroupName.trim()) {
+      onCreateGroup(newGroupName.trim())
+    }
+    setCreatingGroup(false)
+    setNewGroupName('')
+  }
+
+  const cancelCreateGroup = () => {
+    createHandledRef.current = true
+    setCreatingGroup(false)
+    setNewGroupName('')
   }
 
   // 删除分组
@@ -102,12 +121,31 @@ export default function GroupList({
     <div className="flex-1 overflow-y-auto">
       {/* 创建分组按钮 */}
       <div className="p-2">
-        <button
-          onClick={onCreateGroup}
-          className="w-full text-left px-3 py-2 text-sm text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors"
-        >
-          + 新建分组
-        </button>
+        {creatingGroup ? (
+          <input
+            type="text"
+            value={newGroupName}
+            onChange={(e) => setNewGroupName(e.target.value)}
+            onBlur={finishCreateGroup}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') finishCreateGroup()
+              if (e.key === 'Escape') cancelCreateGroup()
+            }}
+            className="w-full bg-gray-600 text-white px-3 py-2 rounded-lg text-sm outline-none"
+            placeholder="输入分组名称..."
+            autoFocus
+          />
+        ) : (
+          <button
+            onClick={() => {
+              createHandledRef.current = false
+              setCreatingGroup(true)
+            }}
+            className="w-full text-left px-3 py-2 text-sm text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors"
+          >
+            + 新建分组
+          </button>
+        )}
       </div>
 
       {/* 未分类 */}

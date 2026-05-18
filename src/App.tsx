@@ -133,6 +133,10 @@ function App() {
     setCurrentPaperLocalPath(paper?.localPath)
   }
 
+  const handleSearchImportComplete = () => {
+    setPaperListVersion(v => v + 1)
+  }
+
   return (
     <div className="h-screen flex bg-gray-50 transition-colors duration-300">
       {/* Sidebar */}
@@ -157,7 +161,10 @@ function App() {
           {showUploader ? (
             /* Upload View */
             <div className="flex-1 overflow-auto p-8 bg-gray-50">
-              <ImportCenter onImportComplete={handleUploadComplete} />
+              <ImportCenter
+                onUploadComplete={handleUploadComplete}
+                onSearchImportComplete={handleSearchImportComplete}
+              />
             </div>
           ) : currentIdeaSession ? (
             /* Idea Chat View: Idea 查看器 + 对话面板 */

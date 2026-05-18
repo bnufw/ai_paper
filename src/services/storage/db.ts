@@ -109,14 +109,30 @@ export interface Settings {
 }
 
 // Gemini配置类型
+export type GeminiModel =
+  | 'gemini-2.5-pro'
+  | 'gemini-3-pro-preview'
+  | 'gemini-3.1-pro-preview'
+  | (string & {})
+
 export interface GeminiSettings {
-  model: 'gemini-2.5-pro' | 'gemini-3-pro-preview'
+  model: GeminiModel
   temperature: number
   streaming: boolean
   useSearch: boolean
   showThoughts: boolean
   thinkingBudget: number
   thinkingLevel?: 'LOW' | 'HIGH'
+}
+
+export const DEFAULT_GEMINI_SETTINGS: GeminiSettings = {
+  model: 'gemini-3.1-pro-preview',
+  temperature: 1.0,
+  streaming: true,
+  useSearch: false,
+  showThoughts: true,
+  thinkingBudget: 8192,
+  thinkingLevel: 'HIGH'
 }
 
 /**
@@ -245,19 +261,10 @@ export async function saveAPIKey(provider: 'mistral' | 'gemini', value: string):
 export async function getGeminiSettings(): Promise<GeminiSettings> {
   const setting = await db.settings.get('gemini_settings')
   if (setting?.value) {
-    return JSON.parse(setting.value)
+    return { ...DEFAULT_GEMINI_SETTINGS, ...JSON.parse(setting.value) }
   }
   
-  // 默认配置
-  return {
-    model: 'gemini-2.5-pro',
-    temperature: 1.0,
-    streaming: true,
-    useSearch: false,
-    showThoughts: true,
-    thinkingBudget: 8192,
-    thinkingLevel: 'HIGH'
-  }
+  return { ...DEFAULT_GEMINI_SETTINGS }
 }
 
 /**

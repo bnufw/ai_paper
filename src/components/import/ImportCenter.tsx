@@ -5,10 +5,11 @@ import SearchImportTab from './SearchImportTab'
 type ImportTab = 'upload' | 'search'
 
 interface ImportCenterProps {
-  onImportComplete: (paperId: number) => void
+  onUploadComplete: (paperId: number) => void
+  onSearchImportComplete?: (paperId: number) => void
 }
 
-export default function ImportCenter({ onImportComplete }: ImportCenterProps) {
+export default function ImportCenter({ onUploadComplete, onSearchImportComplete }: ImportCenterProps) {
   const [activeTab, setActiveTab] = useState<ImportTab>('upload')
 
   return (
@@ -43,10 +44,10 @@ export default function ImportCenter({ onImportComplete }: ImportCenterProps) {
       </div>
 
       <div className={activeTab === 'upload' ? 'block' : 'hidden'}>
-        <PDFUploader onUploadComplete={onImportComplete} />
+        <PDFUploader onUploadComplete={onUploadComplete} />
       </div>
       <div className={activeTab === 'search' ? 'block' : 'hidden'}>
-        <SearchImportTab onImportComplete={onImportComplete} />
+        <SearchImportTab onImportComplete={onSearchImportComplete || onUploadComplete} />
       </div>
     </div>
   )

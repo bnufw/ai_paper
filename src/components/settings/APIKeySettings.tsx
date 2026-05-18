@@ -1,10 +1,16 @@
 import { useState, useEffect } from 'react'
-import { getAPIKey, saveAPIKey, getGeminiSettings, saveGeminiSettings, GeminiSettings, getStorageRootPath, saveStorageRootPath } from '../../services/storage/db'
+import { getAPIKey, saveAPIKey, getGeminiSettings, saveGeminiSettings, DEFAULT_GEMINI_SETTINGS, GeminiSettings, getStorageRootPath, saveStorageRootPath } from '../../services/storage/db'
 import { requestDirectoryAccess, getDirectoryHandle, getDirectoryPath, isFileSystemSupported } from '../../services/storage/fileSystem'
 
 interface APIKeySettingsProps {
   onClose: () => void
 }
+
+const GEMINI_MODEL_OPTIONS = [
+  { value: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro Preview' },
+  { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+  { value: 'gemini-3-pro-preview', label: 'Gemini 3.0 Pro Preview' }
+]
 
 export default function APIKeySettings({ onClose }: APIKeySettingsProps) {
   const [keys, setKeys] = useState({
@@ -17,15 +23,7 @@ export default function APIKeySettings({ onClose }: APIKeySettingsProps) {
     gemini: false
   })
 
-  const [geminiSettings, setGeminiSettings] = useState<GeminiSettings>({
-    model: 'gemini-2.5-pro',
-    temperature: 1.0,
-    streaming: true,
-    useSearch: false,
-    showThoughts: true,
-    thinkingBudget: 8192,
-    thinkingLevel: 'HIGH'
-  })
+  const [geminiSettings, setGeminiSettings] = useState<GeminiSettings>(DEFAULT_GEMINI_SETTINGS)
 
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState('')
@@ -232,12 +230,16 @@ export default function APIKeySettings({ onClose }: APIKeySettingsProps) {
                 value={geminiSettings.model}
                 onChange={(e) => setGeminiSettings({
                   ...geminiSettings,
-                  model: e.target.value as 'gemini-2.5-pro' | 'gemini-3-pro-preview'
+                  model: e.target.value as GeminiSettings['model']
                 })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
               >
-                <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
-                <option value="gemini-3-pro-preview">Gemini 3.0 Pro Preview</option>
+                {GEMINI_MODEL_OPTIONS.map(option => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+                {!GEMINI_MODEL_OPTIONS.some(option => option.value === geminiSettings.model) && (
+                  <option value={geminiSettings.model}>{geminiSettings.model}</option>
+                )}
               </select>
             </div>
 
@@ -320,11 +322,11 @@ export default function APIKeySettings({ onClose }: APIKeySettingsProps) {
             </div>
 
             {/* 根据模型类型显示不同的思考配置 */}
-            {geminiSettings.model === 'gemini-3-pro-preview' ? (
+            {geminiSettings.model.includes('gemini-3') ? (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   思考强度 (Thinking Level)
-                  <span className="text-gray-500 text-xs ml-2">(Gemini 3 Pro专用)</span>
+                  <span className="text-gray-500 text-xs ml-2">(Gemini 3系列专用)</span>
                 </label>
                 <select
                   value={geminiSettings.thinkingLevel || 'HIGH'}

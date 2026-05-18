@@ -19,7 +19,7 @@ If you're using Codex or another agent-capable tool, additional project-scoped h
 Managed by Trellis. Edits outside this block are preserved; edits inside may be overwritten by a future `trellis update`.
 
 <!-- TRELLIS:END -->
-
+For code related to frontend design, use `skill__collaborating-with-gemini-api` for guidance.
 # GUIDELINES
 
 Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.

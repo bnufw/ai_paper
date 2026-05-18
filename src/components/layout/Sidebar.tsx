@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   getAllPapers,
   deletePaper,
@@ -55,6 +55,9 @@ export default function Sidebar({
   const [ideaSettingsOpen, setIdeaSettingsOpen] = useState(false)
   const [selectedGroup, setSelectedGroup] = useState<{ id: number; name: string } | null>(null)
   const [ideaSessionRefreshTrigger, setIdeaSessionRefreshTrigger] = useState(0)
+  const [creatingGroup, setCreatingGroup] = useState(false)
+  const [newGroupName, setNewGroupName] = useState('')
+  const createHandledRef = useRef(false)
 
   // 批量更新标题状态
   const [isUpdatingTitles, setIsUpdatingTitles] = useState(false)
@@ -115,12 +118,27 @@ export default function Sidebar({
   }
 
   // 创建新分组
-  const handleCreateGroup = async () => {
-    const name = prompt('请输入分组名称:')
-    if (!name || !name.trim()) return
+  const handleCreateGroup = async (name: string) => {
+    if (!name.trim()) return
 
     await createGroup(name.trim())
     await loadData()
+  }
+
+  const finishCreateGroup = () => {
+    if (createHandledRef.current) return
+    createHandledRef.current = true
+    if (newGroupName.trim()) {
+      handleCreateGroup(newGroupName.trim())
+    }
+    setCreatingGroup(false)
+    setNewGroupName('')
+  }
+
+  const cancelCreateGroup = () => {
+    createHandledRef.current = true
+    setCreatingGroup(false)
+    setNewGroupName('')
   }
 
   // 重命名分组
@@ -252,12 +270,31 @@ export default function Sidebar({
         ) : papers.length === 0 ? (
           <div className="flex-1 overflow-y-auto">
             <div className="p-2">
-              <button
-                onClick={handleCreateGroup}
-                className="w-full text-left px-3 py-2 text-sm text-gray-400 hover:text-gray-700 hover:bg-gray-200 rounded-lg transition-colors"
-              >
-                + 新建分组
-              </button>
+              {creatingGroup ? (
+                <input
+                  type="text"
+                  value={newGroupName}
+                  onChange={(e) => setNewGroupName(e.target.value)}
+                  onBlur={finishCreateGroup}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') finishCreateGroup()
+                    if (e.key === 'Escape') cancelCreateGroup()
+                  }}
+                  className="w-full bg-white border border-gray-300 text-gray-700 px-3 py-2 rounded-lg text-sm outline-none"
+                  placeholder="输入分组名称..."
+                  autoFocus
+                />
+              ) : (
+                <button
+                  onClick={() => {
+                    createHandledRef.current = false
+                    setCreatingGroup(true)
+                  }}
+                  className="w-full text-left px-3 py-2 text-sm text-gray-400 hover:text-gray-700 hover:bg-gray-200 rounded-lg transition-colors"
+                >
+                  + 新建分组
+                </button>
+              )}
             </div>
             {groups.length > 0 && (
               <div className="px-2 space-y-1">

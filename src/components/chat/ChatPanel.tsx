@@ -74,7 +74,13 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
   useEffect(() => {
     async function loadModelName() {
       const settings = await getGeminiSettings()
-      const displayName = settings.model === 'gemini-2.5-pro' ? '2.5 Pro' : '3 Pro'
+      const displayName = settings.model === 'gemini-2.5-pro'
+        ? '2.5 Pro'
+        : settings.model === 'gemini-3.1-pro-preview'
+          ? '3.1 Pro'
+          : settings.model === 'gemini-3-pro-preview'
+            ? '3 Pro'
+            : settings.model
       setModelName(displayName)
     }
     loadModelName()

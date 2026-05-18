@@ -48,6 +48,24 @@ const IMPORT_SOURCE_HOST_SUFFIXES = [
 ] as const
 
 const DEFAULT_SEARCH_YEARS = [2026, 2025]
+const MIN_LLM_RESULTS_PER_DATASET = 3
+
+interface VenueYearSelection {
+  venue: string
+  year: number
+}
+
+interface SearchRunOptions {
+  query: string
+  years: number[]
+  venueNames: string[]
+  venueYearPairs: VenueYearSelection[]
+  topK: number
+  useLLM: boolean
+  useChineseReason: boolean
+  useBilingualTranslation: boolean
+  saveHistorySnapshot: boolean
+}
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError'
@@ -165,6 +183,28 @@ function selectedHistoryVenues(venues: Venue[], selectedVenues: string[], years:
   })
 }
 
+function getVenueYearPairs(
+  venues: Venue[],
+  selectedVenues: string[],
+  selectedYears: number[]
+): VenueYearSelection[] {
+  return selectedVenues.flatMap(venueName => {
+    const venue = venues.find(item => item.name === venueName)
+    if (!venue) return []
+    return selectedYears
+      .filter(year => hasLocalSearchData(venue, year))
+      .map(year => ({ venue: venueName, year }))
+  })
+}
+
+function requestTopK(visibleTopK: number, pairCount: number, useLLMEval: boolean): number {
+  if (!useLLMEval || pairCount <= 1) return visibleTopK
+  return Math.min(
+    visibleTopK,
+    Math.max(MIN_LLM_RESULTS_PER_DATASET, Math.ceil(visibleTopK / pairCount))
+  )
+}
+
 function formatYears(years: number[]): string {
   if (years.length === 0) return '未选择年份'
   return [...years].sort((a, b) => b - a).join('、')
@@ -209,12 +249,14 @@ function PaperResultCard({
   paper,
   rank,
   importing,
+  imported,
   importProgress,
   onImport
 }: {
   paper: SearchPaper
   rank: number
   importing: boolean
+  imported: boolean
   importProgress?: { stage: string; percent: number }
   onImport: (paper: SearchPaper) => void
 }) {
@@ -244,11 +286,11 @@ function PaperResultCard({
             </div>
             <button
               onClick={() => onImport(paper)}
-              disabled={importing || !importSourceUrl}
+              disabled={importing || imported || !importSourceUrl}
               title={importSourceUrl ? undefined : '搜索结果缺少 PDF 链接，无法导入'}
               className="shrink-0 px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
             >
-              {importing ? '导入中' : importSourceUrl ? '导入' : '缺少 PDF'}
+              {imported ? '已导入' : importing ? '导入中' : importSourceUrl ? '导入' : '缺少 PDF'}
             </button>
           </div>
 
@@ -358,8 +400,8 @@ export default function SearchImportTab({ onImportComplete }: SearchImportTabPro
 
   const [description, setDescription] = useState('')
   const [topK, setTopK] = useState(25)
-  const [useLLM, setUseLLM] = useState(true)
-  const [useChineseReason, setUseChineseReason] = useState(true)
+  const [useLLM, setUseLLM] = useState(false)
+  const [useChineseReason, setUseChineseReason] = useState(false)
   const [useBilingualTranslation, setUseBilingualTranslation] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [searching, setSearching] = useState(false)
@@ -370,7 +412,9 @@ export default function SearchImportTab({ onImportComplete }: SearchImportTabPro
   const [keywords, setKeywords] = useState<string[]>([])
   const [searchHistory, setSearchHistory] = useState<SearchHistoryRecord[]>([])
   const [importingPaperId, setImportingPaperId] = useState<string | null>(null)
+  const [importedPaperIds, setImportedPaperIds] = useState<Set<string>>(() => new Set())
   const [importProgress, setImportProgress] = useState<{ stage: string; percent: number } | null>(null)
+  const [importNotice, setImportNotice] = useState('')
 
   const searchAbortRef = useRef<AbortController | null>(null)
   const isMountedRef = useRef(true)
@@ -439,13 +483,7 @@ export default function SearchImportTab({ onImportComplete }: SearchImportTabPro
   )
 
   const selectedVenueYearPairs = useMemo(
-    () => selectedSearchVenues.flatMap(venueName => {
-      const venue = venues.find(item => item.name === venueName)
-      if (!venue) return []
-      return selectedSearchYears
-        .filter(year => hasLocalSearchData(venue, year))
-        .map(year => ({ venue: venueName, year }))
-    }),
+    () => getVenueYearPairs(venues, selectedSearchVenues, selectedSearchYears),
     [selectedSearchVenues, selectedSearchYears, venues]
   )
 
@@ -607,38 +645,8 @@ export default function SearchImportTab({ onImportComplete }: SearchImportTabPro
     ))
   }
 
-  const restoreHistory = (record: SearchHistoryRecord) => {
-    searchAbortRef.current?.abort()
-    const restoredVenues = record.venues.map(venue => venue.venue)
-    pendingSearchVenuesRef.current = restoredVenues
-    setSelectedSearchYears(record.years)
-    setSelectedSearchVenues(restoredVenues)
-    setDescription(record.query)
-    setTopK(record.topK)
-    setUseLLM(record.useLLM)
-    setUseChineseReason(record.useChineseReason)
-    setUseBilingualTranslation(record.useBilingualTranslation)
-    setResultPapers(record.papers)
-    setResultSummary(record.resultSummary)
-    setKeywords(record.keywords)
-    setSearchError('')
-    setProgress(null)
-    setSearching(false)
-  }
-
-  const handleDeleteHistory = async (recordId: string) => {
-    setSearchHistory(await deleteSearchHistory(recordId))
-  }
-
-  const handleClearHistory = async () => {
-    await clearSearchHistory()
-    setSearchHistory([])
-  }
-
-  const handleSearch = async () => {
-    const query = description.trim()
-    if (!query || selectedVenueYearPairs.length === 0) return
-
+  const runSearch = useCallback(async (options: SearchRunOptions) => {
+    if (!options.query || options.venueYearPairs.length === 0) return
     searchAbortRef.current?.abort()
     const controller = new AbortController()
     searchAbortRef.current = controller
@@ -649,17 +657,19 @@ export default function SearchImportTab({ onImportComplete }: SearchImportTabPro
     setResultPapers([])
     setResultSummary('')
     setKeywords([])
+    setImportNotice('')
 
     try {
+      const backendTopK = requestTopK(options.topK, options.venueYearPairs.length, options.useLLM)
       const result = await searchApi.multiSearch(
         {
-          research_description: query,
+          research_description: options.query,
           auto_latest: false,
-          venues: selectedVenueYearPairs,
-          top_k: topK,
-          use_llm_eval: useLLM,
-          use_chinese_relevance_reason: useChineseReason,
-          use_bilingual_translation: useBilingualTranslation
+          venues: options.venueYearPairs,
+          top_k: backendTopK,
+          use_llm_eval: options.useLLM,
+          use_chinese_relevance_reason: options.useChineseReason,
+          use_bilingual_translation: options.useBilingualTranslation
         },
         setProgress,
         controller.signal
@@ -672,26 +682,28 @@ export default function SearchImportTab({ onImportComplete }: SearchImportTabPro
       const papers = result.venues
         .flatMap(venue => venue.papers)
         .sort((a, b) => b.relevance_score - a.relevance_score)
-        .slice(0, topK)
-      const pairYears = Array.from(new Set(selectedVenueYearPairs.map(pair => pair.year))).sort((a, b) => b - a)
-      const pairVenues = Array.from(new Set(selectedVenueYearPairs.map(pair => pair.venue)))
-      const summary = `${formatYears(pairYears)} · ${pairVenues.length} 个会议 · ${selectedVenueYearPairs.length} 个数据集 · ${papers.length} 个结果`
+        .slice(0, options.topK)
+      const pairYears = Array.from(new Set(options.venueYearPairs.map(pair => pair.year))).sort((a, b) => b - a)
+      const pairVenues = Array.from(new Set(options.venueYearPairs.map(pair => pair.venue)))
+      const summary = `${formatYears(pairYears)} · ${pairVenues.length} 个会议 · ${options.venueYearPairs.length} 个数据集 · ${papers.length} 个结果`
 
       setResultPapers(papers)
       setResultSummary(summary)
       setKeywords(result.keywords)
-      setSearchHistory(await saveSearchHistory({
-        query,
-        years: selectedSearchYears,
-        venues: selectedHistoryVenues(venues, selectedSearchVenues, selectedSearchYears),
-        topK,
-        useLLM,
-        useChineseReason,
-        useBilingualTranslation,
-        resultSummary: summary,
-        keywords: result.keywords,
-        papers
-      }))
+      if (options.saveHistorySnapshot) {
+        setSearchHistory(await saveSearchHistory({
+          query: options.query,
+          years: options.years,
+          venues: selectedHistoryVenues(venues, options.venueNames, options.years),
+          topK: options.topK,
+          useLLM: options.useLLM,
+          useChineseReason: options.useChineseReason,
+          useBilingualTranslation: options.useBilingualTranslation,
+          resultSummary: summary,
+          keywords: result.keywords,
+          papers
+        }))
+      }
     } catch (error) {
       if (!isAbortError(error)) {
         setSearchError(errorMessage(error, '搜索失败'))
@@ -699,14 +711,83 @@ export default function SearchImportTab({ onImportComplete }: SearchImportTabPro
     } finally {
       if (searchAbortRef.current === controller) {
         searchAbortRef.current = null
+        setSearching(false)
+        setProgress(null)
       }
-      setSearching(false)
-      setProgress(null)
     }
+  }, [venues])
+
+  const restoreHistory = (record: SearchHistoryRecord) => {
+    searchAbortRef.current?.abort()
+    const restoredVenues = record.venues.map(venue => venue.venue)
+    const restoredPairs = getVenueYearPairs(venues, restoredVenues, record.years)
+    pendingSearchVenuesRef.current = restoredVenues
+    setSelectedSearchYears(record.years)
+    setSelectedSearchVenues(restoredVenues)
+    setDescription(record.query)
+    setTopK(record.topK)
+    setUseLLM(record.useLLM)
+    setUseChineseReason(record.useChineseReason)
+    setUseBilingualTranslation(record.useBilingualTranslation)
+    setSearchError('')
+    setProgress(null)
+    setSearching(false)
+    setImportNotice('')
+
+    if (record.papers.length > 0) {
+      setResultPapers(record.papers)
+      setResultSummary(record.resultSummary || `${formatYears(record.years)} · ${restoredVenues.length} 个会议 · ${record.papers.length} 个结果`)
+      setKeywords(record.keywords)
+      return
+    }
+
+    setResultPapers([])
+    setResultSummary('')
+    setKeywords([])
+
+    if (restoredPairs.length === 0) {
+      setSearchError('搜索记录未保存结果快照，且当前本地数据不足，无法自动恢复。')
+      return
+    }
+
+    void runSearch({
+      query: record.query.trim(),
+      years: record.years,
+      venueNames: restoredVenues,
+      venueYearPairs: restoredPairs,
+      topK: record.topK,
+      useLLM: record.useLLM,
+      useChineseReason: record.useChineseReason,
+      useBilingualTranslation: record.useBilingualTranslation,
+      saveHistorySnapshot: true
+    })
+  }
+
+  const handleDeleteHistory = async (recordId: string) => {
+    setSearchHistory(await deleteSearchHistory(recordId))
+  }
+
+  const handleClearHistory = async () => {
+    await clearSearchHistory()
+    setSearchHistory([])
+  }
+
+  const handleSearch = async () => {
+    await runSearch({
+      query: description.trim(),
+      years: selectedSearchYears,
+      venueNames: selectedSearchVenues,
+      venueYearPairs: selectedVenueYearPairs,
+      topK,
+      useLLM,
+      useChineseReason,
+      useBilingualTranslation,
+      saveHistorySnapshot: true
+    })
   }
 
   const handleImport = async (paper: SearchPaper) => {
-    if (importingPaperId) return
+    if (importingPaperId || importedPaperIds.has(paper.id)) return
     const importSourceUrl = getImportSourceUrl(paper)
     if (!importSourceUrl) {
       setSearchError('搜索结果缺少 PDF 链接，无法导入。')
@@ -716,12 +797,20 @@ export default function SearchImportTab({ onImportComplete }: SearchImportTabPro
     setImportingPaperId(paper.id)
     setImportProgress({ stage: '检查是否已导入...', percent: 3 })
     setSearchError('')
+    setImportNotice('')
 
     try {
       const existing = await findPaperBySource(paper.id, importSourceUrl)
       if (existing?.id) {
-        setImportProgress({ stage: '已存在，正在打开...', percent: 100 })
-        setTimeout(() => onImportComplete(existing.id!), 300)
+        setImportProgress({ stage: '已存在', percent: 100 })
+        setImportedPaperIds(current => new Set(current).add(paper.id))
+        window.setTimeout(() => {
+          if (!isMountedRef.current) return
+          onImportComplete(existing.id!)
+          setImportingPaperId(null)
+          setImportProgress(null)
+          setImportNotice('论文已存在，列表已刷新。')
+        }, 300)
         return
       }
 
@@ -758,11 +847,20 @@ export default function SearchImportTab({ onImportComplete }: SearchImportTabPro
         }
       })
 
-      setTimeout(() => onImportComplete(paperId), 500)
+      setImportProgress({ stage: '导入完成', percent: 100 })
+      setImportedPaperIds(current => new Set(current).add(paper.id))
+      window.setTimeout(() => {
+        if (!isMountedRef.current) return
+        onImportComplete(paperId)
+        setImportingPaperId(null)
+        setImportProgress(null)
+        setImportNotice('导入完成，列表已刷新。')
+      }, 500)
     } catch (error) {
       setSearchError(errorMessage(error, '导入失败'))
       setImportingPaperId(null)
       setImportProgress(null)
+      setImportNotice('')
     }
   }
 
@@ -1058,10 +1156,13 @@ export default function SearchImportTab({ onImportComplete }: SearchImportTabPro
                   <input
                     type="checkbox"
                     checked={useLLM}
-                    onChange={event => setUseLLM(event.target.checked)}
+                    onChange={event => {
+                      setUseLLM(event.target.checked)
+                      if (!event.target.checked) setUseChineseReason(false)
+                    }}
                     className="mt-0.5"
                   />
-                  <span>LLM 相关性评分</span>
+                  <span>LLM 相关性评分（更慢）</span>
                 </label>
 
                 <label className={`flex items-start gap-2 text-xs ${useLLM ? 'text-gray-600' : 'text-gray-400'}`}>
@@ -1094,6 +1195,12 @@ export default function SearchImportTab({ onImportComplete }: SearchImportTabPro
             </div>
           )}
 
+          {importNotice && (
+            <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
+              {importNotice}
+            </div>
+          )}
+
           <button
             onClick={handleSearch}
             disabled={!canSearch || searching}
@@ -1107,45 +1214,46 @@ export default function SearchImportTab({ onImportComplete }: SearchImportTabPro
               {progress?.message || '正在处理搜索请求...'}
             </div>
           )}
+
+          <div className="mt-5 border-t border-gray-200 pt-5">
+            <div className="flex items-center justify-between gap-4 mb-4">
+              <div>
+                <h2 className="text-base font-semibold text-gray-800">搜索结果</h2>
+                {resultSummary && <p className="text-xs text-gray-500 mt-1">{resultSummary}</p>}
+              </div>
+              {keywords.length > 0 && (
+                <div className="hidden md:flex flex-wrap justify-end gap-1 max-w-xl">
+                  {keywords.slice(0, 8).map(keyword => (
+                    <span key={keyword} className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">
+                      {keyword}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {resultPapers.length > 0 ? (
+              <div className="space-y-3">
+                {resultPapers.map((paper, index) => (
+                  <PaperResultCard
+                    key={`${paper.id}-${index}`}
+                    paper={paper}
+                    rank={index + 1}
+                    importing={importingPaperId === paper.id}
+                    imported={importedPaperIds.has(paper.id)}
+                    importProgress={importingPaperId === paper.id ? importProgress || undefined : undefined}
+                    onImport={handleImport}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="py-12 text-center text-gray-400 text-sm">
+                搜索结果会显示在这里。
+              </div>
+            )}
+          </div>
         </section>
       </div>
-
-      <section className="bg-white border border-gray-200 rounded-lg p-5">
-        <div className="flex items-center justify-between gap-4 mb-4">
-          <div>
-            <h2 className="text-base font-semibold text-gray-800">搜索结果</h2>
-            {resultSummary && <p className="text-xs text-gray-500 mt-1">{resultSummary}</p>}
-          </div>
-          {keywords.length > 0 && (
-            <div className="hidden md:flex flex-wrap justify-end gap-1 max-w-xl">
-              {keywords.slice(0, 8).map(keyword => (
-                <span key={keyword} className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">
-                  {keyword}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {resultPapers.length > 0 ? (
-          <div className="space-y-3">
-            {resultPapers.map((paper, index) => (
-              <PaperResultCard
-                key={`${paper.id}-${index}`}
-                paper={paper}
-                rank={index + 1}
-                importing={importingPaperId === paper.id}
-                importProgress={importingPaperId === paper.id ? importProgress || undefined : undefined}
-                onImport={handleImport}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="py-16 text-center text-gray-400 text-sm">
-            搜索结果会显示在这里。
-          </div>
-        )}
-      </section>
     </div>
   )
 }

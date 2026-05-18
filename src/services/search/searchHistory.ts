@@ -30,8 +30,8 @@ function normalizeHistoryRecord(record: LegacySearchHistoryRecord): SearchHistor
       total_papers: venue.total_papers
     })),
     topK: record.topK || 25,
-    useLLM: record.useLLM ?? true,
-    useChineseReason: record.useChineseReason ?? true,
+    useLLM: record.useLLM ?? false,
+    useChineseReason: record.useChineseReason ?? false,
     useBilingualTranslation: record.useBilingualTranslation ?? false,
     resultSummary: record.resultSummary || '',
     keywords: record.keywords || [],
@@ -52,6 +52,33 @@ function parseHistory(value?: string): SearchHistoryRecord[] {
   } catch {
     return []
   }
+}
+
+function sameNumberSet(left: number[], right: number[]): boolean {
+  if (left.length !== right.length) return false
+  const normalizedLeft = [...left].sort((a, b) => a - b)
+  const normalizedRight = [...right].sort((a, b) => a - b)
+  return normalizedLeft.every((value, index) => value === normalizedRight[index])
+}
+
+function sameStringSet(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false
+  const normalizedLeft = [...left].sort()
+  const normalizedRight = [...right].sort()
+  return normalizedLeft.every((value, index) => value === normalizedRight[index])
+}
+
+function sameSearchRequest(left: SearchHistoryRecord, right: SearchHistoryRecord): boolean {
+  return left.query === right.query
+    && sameNumberSet(left.years, right.years)
+    && sameStringSet(
+      left.venues.map(venue => venue.venue),
+      right.venues.map(venue => venue.venue)
+    )
+    && left.topK === right.topK
+    && left.useLLM === right.useLLM
+    && left.useChineseReason === right.useChineseReason
+    && left.useBilingualTranslation === right.useBilingualTranslation
 }
 
 async function writeHistory(records: SearchHistoryRecord[]): Promise<void> {
@@ -75,7 +102,10 @@ export async function saveSearchHistory(
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     createdAt: new Date().toISOString()
   }
-  const next = [nextRecord, ...existing].slice(0, SEARCH_HISTORY_LIMIT)
+  const next = [
+    nextRecord,
+    ...existing.filter(item => !sameSearchRequest(item, nextRecord))
+  ].slice(0, SEARCH_HISTORY_LIMIT)
   await writeHistory(next)
   return next
 }
