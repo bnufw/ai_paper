@@ -256,3 +256,71 @@ await searchApi.multiSearch({
   top_k: topK
 })
 ```
+
+## Scenario: Paper Group Move And Local File Sync
+
+### 1. Scope / Trigger
+
+- Trigger: Paper group changes affect both IndexedDB metadata and File System Access API directories.
+- Apply when changing `src/services/storage/db.ts`, `src/services/storage/fileSystem.ts`, `src/services/storage/paperStorage.ts`, or group/paper move UI in `src/components/layout/*`.
+
+### 2. Signatures
+
+- `movePaperToGroup(paperId: number, groupId?: number) -> Promise<void>`
+- `Paper.groupId?: number`
+- `Paper.localPath?: string`
+- Local paper directory layout: `{groupName}/{paperFolder}/source.pdf`, `paper.md`, optional `note.md`, optional `images/`.
+- Uncategorized physical group name: `未分类`; uncategorized IndexedDB value: `groupId === undefined`.
+
+### 3. Contracts
+
+- A move for a paper with `localPath` must move the whole local paper directory before updating IndexedDB.
+- The paper folder name is the final path segment of `localPath`; moving preserves that folder name.
+- After a successful local move, update `groupId`, `localPath`, and `updatedAt` together.
+- Moving to `undefined` stores files under `未分类/<paperFolder>` and stores `groupId` as `undefined`.
+- Moving a legacy paper without `localPath` may update IndexedDB only, but the target group must still be validated.
+- Directory move helpers must reject target directory conflicts before copying, because recursive copy with `{ create: true }` can silently merge folders.
+
+### 4. Validation & Error Matrix
+
+- Missing paper id -> throw `论文不存在`.
+- Missing target group id -> throw `目标分组不存在`.
+- Missing storage root for a paper with `localPath` -> throw `未配置存储目录`.
+- Invalid `localPath` with no paper folder segment -> throw `论文本地路径无效`.
+- Existing target directory -> throw a conflict error and leave IndexedDB unchanged.
+- File System Access API permission or source-folder failure -> leave IndexedDB unchanged and surface the error to UI.
+
+### 5. Good/Base/Bad Cases
+
+- Good: Moving from `A/paper_123` to group `B` copies the full directory to `B/paper_123`, removes `A/paper_123`, then updates `groupId` and `localPath`.
+- Base: Moving a legacy DB-only paper validates the target group and updates only `groupId`.
+- Bad: Updating `papers.groupId` first and then trying to move files; a filesystem failure leaves UI metadata pointing to a path that still lives in the old group.
+- Bad: Copying into an existing target directory; files from two papers can be merged under one folder.
+
+### 6. Tests Required
+
+- Type-check/build after changing this flow.
+- Manual or automated check that successful move changes `localPath` to the target group path.
+- Manual or automated check that `note.md` and `images/` remain readable after move.
+- Manual or automated check that target directory conflict leaves `groupId` and `localPath` unchanged.
+- Manual browser check that a selected paper still opens after being moved.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+await db.papers.update(paperId, { groupId })
+await renameDirectory(rootHandle, oldPath, newPath)
+```
+
+#### Correct
+
+```typescript
+await renameDirectory(rootHandle, oldPath, newPath)
+await db.papers.update(paperId, {
+  groupId,
+  localPath: newPath,
+  updatedAt: new Date()
+})
+```

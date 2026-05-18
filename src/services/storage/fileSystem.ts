@@ -207,6 +207,15 @@ export async function renameDirectory(
   const oldDirHandle = await parentHandle.getDirectoryHandle(oldName)
   
   const newParentHandle = await createDirectory(rootHandle, newParts.join('/'))
+  try {
+    await newParentHandle.getDirectoryHandle(newName)
+    throw new Error('目标目录已存在，已取消移动以避免覆盖文件')
+  } catch (err) {
+    if (!(err instanceof DOMException && err.name === 'NotFoundError')) {
+      throw err
+    }
+  }
+
   await copyDirectory(oldDirHandle, newParentHandle, newName)
   
   await parentHandle.removeEntry(oldName, { recursive: true })

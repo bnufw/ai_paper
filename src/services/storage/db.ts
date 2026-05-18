@@ -6,7 +6,7 @@ import {
   PRESET_SUMMARIZER,
   DEFAULT_ENDPOINTS
 } from '../../types/idea'
-import { getDirectoryHandle, getDirectory, readTextFile } from './fileSystem'
+import { getDirectoryHandle, getDirectory, readTextFile, renameDirectory } from './fileSystem'
 
 // 重新导出 IdeaSession 类型
 export type { IdeaSession } from '../../types/idea'
@@ -510,10 +510,57 @@ export async function getAllGroups(): Promise<PaperGroup[]> {
  * 移动论文到分组
  */
 export async function movePaperToGroup(paperId: number, groupId?: number): Promise<void> {
+  const paper = await db.papers.get(paperId)
+  if (!paper) {
+    throw new Error('论文不存在')
+  }
+
+  let localPath = paper.localPath
+  const targetGroupName = await getTargetGroupName(groupId)
+
+  if (localPath) {
+    const folderName = getPaperFolderName(localPath)
+    const targetLocalPath = `${targetGroupName}/${folderName}`
+
+    if (targetLocalPath !== localPath) {
+      const rootHandle = await getDirectoryHandle()
+      if (!rootHandle) {
+        throw new Error('未配置存储目录')
+      }
+
+      await renameDirectory(rootHandle, localPath, targetLocalPath)
+      localPath = targetLocalPath
+    }
+  }
+
   await db.papers.update(paperId, {
     groupId,
+    localPath,
     updatedAt: new Date()
   })
+}
+
+async function getTargetGroupName(groupId?: number): Promise<string> {
+  if (groupId === undefined) {
+    return '未分类'
+  }
+
+  const group = await db.groups.get(groupId)
+  if (!group) {
+    throw new Error('目标分组不存在')
+  }
+
+  return group.name
+}
+
+function getPaperFolderName(localPath: string): string {
+  const parts = localPath.split('/').filter(Boolean)
+  const folderName = parts[parts.length - 1]
+  if (!folderName) {
+    throw new Error('论文本地路径无效')
+  }
+
+  return folderName
 }
 
 /**

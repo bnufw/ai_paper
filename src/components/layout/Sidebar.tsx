@@ -6,6 +6,7 @@ import {
   createGroup,
   renameGroup,
   deleteGroup,
+  movePaperToGroup,
   togglePaperExcludeFromIdea,
   getIdeaSession,
   type Paper,
@@ -132,6 +133,20 @@ export default function Sidebar({
   const handleDeleteGroup = async (groupId: number) => {
     await deleteGroup(groupId)
     await loadData()
+  }
+
+  const handleMovePaper = async (paperId: number, groupId?: number) => {
+    try {
+      await movePaperToGroup(paperId, groupId)
+      await loadData(false)
+
+      if (paperId === currentPaperId) {
+        onSelectPaper(paperId)
+      }
+    } catch (err) {
+      console.error('移动论文分组失败:', err)
+      alert('移动失败: ' + (err as Error).message)
+    }
   }
 
   // 打开 Idea 生成工作流
@@ -268,6 +283,7 @@ export default function Sidebar({
             onCreateGroup={handleCreateGroup}
             onRenameGroup={handleRenameGroup}
             onDeleteGroup={handleDeleteGroup}
+            onMovePaper={handleMovePaper}
             onGenerateIdea={handleGenerateIdea}
             onToggleExcludeFromIdea={handleToggleExcludeFromIdea}
           />

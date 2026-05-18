@@ -12,6 +12,7 @@ interface GroupListProps {
   onCreateGroup: () => void
   onRenameGroup: (groupId: number, newName: string) => void
   onDeleteGroup: (groupId: number) => void
+  onMovePaper?: (paperId: number, groupId?: number) => Promise<void> | void
   onGenerateIdea?: (groupId: number, groupName: string) => void
   onToggleExcludeFromIdea?: (paperId: number) => void
 }
@@ -25,6 +26,7 @@ export default function GroupList({
   onCreateGroup,
   onRenameGroup,
   onDeleteGroup,
+  onMovePaper,
   onGenerateIdea,
   onToggleExcludeFromIdea
 }: GroupListProps) {
@@ -33,6 +35,8 @@ export default function GroupList({
   const [editingName, setEditingName] = useState('')
   const [noteModalGroup, setNoteModalGroup] = useState<string | null>(null)
   const [knowledgeModalGroup, setKnowledgeModalGroup] = useState<{ id: number; name: string } | null>(null)
+  const [movingPaperId, setMovingPaperId] = useState<number | null>(null)
+  const [movingBusyPaperId, setMovingBusyPaperId] = useState<number | null>(null)
 
   // 切换分组展开/折叠
   const toggleGroup = (groupId: number) => {
@@ -66,6 +70,18 @@ export default function GroupList({
     e.stopPropagation()
     if (confirm('确定删除此分组？论文将移至未分类。')) {
       onDeleteGroup(groupId)
+    }
+  }
+
+  const handleMovePaper = async (paperId: number, groupId?: number) => {
+    if (!onMovePaper) return
+
+    setMovingBusyPaperId(paperId)
+    try {
+      await onMovePaper(paperId, groupId)
+      setMovingPaperId(null)
+    } finally {
+      setMovingBusyPaperId(null)
     }
   }
 
@@ -139,6 +155,14 @@ export default function GroupList({
                   e.stopPropagation()
                   onToggleExcludeFromIdea(paper.id!)
                 } : undefined}
+                groups={groups}
+                isMoving={movingPaperId === paper.id}
+                isMoveBusy={movingBusyPaperId === paper.id}
+                onStartMove={onMovePaper ? (e) => {
+                  e.stopPropagation()
+                  setMovingPaperId(movingPaperId === paper.id ? null : paper.id!)
+                } : undefined}
+                onMove={(groupId) => handleMovePaper(paper.id!, groupId)}
               />
             ))}
           </div>
@@ -250,6 +274,14 @@ export default function GroupList({
                       e.stopPropagation()
                       onToggleExcludeFromIdea(paper.id!)
                     } : undefined}
+                    groups={groups}
+                    isMoving={movingPaperId === paper.id}
+                    isMoveBusy={movingBusyPaperId === paper.id}
+                    onStartMove={onMovePaper ? (e) => {
+                      e.stopPropagation()
+                      setMovingPaperId(movingPaperId === paper.id ? null : paper.id!)
+                    } : undefined}
+                    onMove={(groupId) => handleMovePaper(paper.id!, groupId)}
                   />
                 ))}
               </div>
@@ -282,15 +314,29 @@ function PaperItem({
   isSelected,
   onSelect,
   onDelete,
-  onToggleExclude
+  onToggleExclude,
+  groups,
+  isMoving,
+  isMoveBusy,
+  onStartMove,
+  onMove
 }: {
   paper: Paper
   isSelected: boolean
   onSelect: () => void
   onDelete: (e: React.MouseEvent) => void
   onToggleExclude?: (e: React.MouseEvent) => void
+  groups: PaperGroup[]
+  isMoving: boolean
+  isMoveBusy: boolean
+  onStartMove?: (e: React.MouseEvent) => void
+  onMove: (groupId?: number) => void
 }) {
   const isExcluded = paper.excludeFromIdea
+  const moveTargets = [
+    { id: undefined, name: '未分类' },
+    ...groups.map(group => ({ id: group.id, name: group.name }))
+  ].filter(group => group.id !== paper.groupId)
 
   return (
     <div
@@ -310,6 +356,16 @@ function PaperItem({
         </div>
 
         <div className="flex items-center ml-2">
+          {onStartMove && moveTargets.length > 0 && (
+            <button
+              onClick={onStartMove}
+              disabled={isMoveBusy}
+              className="opacity-0 group-hover:opacity-100 text-blue-400 hover:text-blue-300 transition-opacity mr-1 disabled:opacity-50"
+              title="移动到分组"
+            >
+              {isMoveBusy ? '⏳' : '↪'}
+            </button>
+          )}
           {onToggleExclude && (
             <button
               onClick={onToggleExclude}
@@ -330,6 +386,28 @@ function PaperItem({
           </button>
         </div>
       </div>
+
+      {isMoving && moveTargets.length > 0 && (
+        <select
+          value=""
+          disabled={isMoveBusy}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => {
+            e.stopPropagation()
+            const value = e.target.value
+            if (!value) return
+            onMove(value === '__uncategorized__' ? undefined : Number(value))
+          }}
+          className="mt-2 w-full bg-gray-600 text-white text-xs px-2 py-1 rounded outline-none"
+        >
+          <option value="" disabled>移动到...</option>
+          {moveTargets.map(group => (
+            <option key={group.id ?? '__uncategorized__'} value={group.id ?? '__uncategorized__'}>
+              {group.name}
+            </option>
+          ))}
+        </select>
+      )}
     </div>
   )
 }
