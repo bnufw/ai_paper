@@ -227,8 +227,8 @@ export class IdeaWorkflowEngine {
       const totalTasks = enabledGenerators.length + enabledEvaluators.length + 1
       this.updateProgress(0, totalTasks, '收集上下文')
 
-      // 收集生成器上下文（领域知识 + 论文笔记 + 用户研究方向）
-      const context = await collectGeneratorContext(groupId, groupName, config.userIdea || '')
+      // 收集生成器上下文（论文笔记 + 用户研究方向）
+      const context = await collectGeneratorContext(groupId, config.userIdea || '')
 
       if (signal.aborted) return
 

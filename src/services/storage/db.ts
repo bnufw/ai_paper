@@ -59,7 +59,8 @@ export interface PaperImage {
 // 对话会话类型
 export interface Conversation {
   id?: number
-  paperId: number
+  paperId?: number
+  groupId?: number
   title: string
   createdAt: Date
   updatedAt: Date
@@ -221,6 +222,20 @@ class PaperReaderDatabase extends Dexie {
       ideaMessages: '++id, sessionId, timestamp'
     }).upgrade(() => {
       console.log('[DB] 升级数据库到版本 7，新增论文来源索引')
+    })
+
+    // v8: 会话支持按分组聚合
+    this.version(8).stores({
+      groups: '++id, createdAt',
+      papers: '++id, groupId, createdAt, sourceId, pdfUrl',
+      images: '++id, paperId, imageIndex',
+      conversations: '++id, paperId, groupId, createdAt',
+      messages: '++id, conversationId, timestamp',
+      settings: 'key',
+      ideaSessions: '++id, groupId, timestamp, status, createdAt',
+      ideaMessages: '++id, sessionId, timestamp'
+    }).upgrade(() => {
+      console.log('[DB] 升级数据库到版本 8，新增分组会话索引')
     })
   }
 }

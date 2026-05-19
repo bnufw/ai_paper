@@ -7,6 +7,7 @@ import rehypeHighlight from 'rehype-highlight'
 import { useChat } from '../../hooks/useChat'
 import { getGeminiSettings, type MessageImage, type Paper, markMessageAddedToNote } from '../../services/storage/db'
 import { appendToNote } from '../../services/note/noteService'
+import { loadGroupNote, saveGroupNote } from '../../services/storage/fileSystem'
 import ConversationList from './ConversationList'
 import ThinkingTimer from './ThinkingTimer'
 import ImageUploadButton from './ImageUploadButton'
@@ -53,12 +54,14 @@ const SLASH_COMMANDS = [
 ] as const
 
 interface ChatPanelProps {
-  paperId: number
+  paperId: number | null
+  groupId?: number | null
+  groupName?: string | null
   localPath: string | undefined
   onNoteUpdated?: () => void
 }
 
-export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPanelProps) {
+export default function ChatPanel({ paperId, groupId = null, groupName = null, localPath, onNoteUpdated }: ChatPanelProps) {
   const {
     messages,
     conversations,
@@ -80,7 +83,7 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
     exportConversation,
     clearMessages,
     markAsAddedToNote
-  } = useChat(paperId)
+  } = useChat({ paperId, groupId, groupName })
 
   const [inputValue, setInputValue] = useState('')
   const [pendingImages, setPendingImages] = useState<MessageImage[]>([])
@@ -108,6 +111,10 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
   const filteredSlashCommands = slashCommand
     ? SLASH_COMMANDS.filter(item => item.command.startsWith(slashCommand.searchText.toLowerCase()))
     : []
+  const canAddToNote = paperId != null ? !!localPath : !!groupName
+  const emptyDescription = paperId != null
+    ? '向 AI 提问关于这篇论文的任何问题'
+    : '向 AI 提问关于该分组下所有论文的任何问题'
 
   // 加载模型配置
   useEffect(() => {
@@ -187,10 +194,17 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
   }
 
   const handleAddToNote = async (messageId: number, content: string) => {
-    if (!localPath || addingToNoteId) return
+    if (!canAddToNote || addingToNoteId) return
     setAddingToNoteId(messageId)
     try {
-      await appendToNote(localPath, content)
+      if (paperId != null && localPath) {
+        await appendToNote(localPath, content)
+      } else if (groupName) {
+        const currentNote = await loadGroupNote(groupName)
+        const addedAt = new Date().toLocaleString('zh-CN')
+        const block = `## 从分组对话添加 (${addedAt})\n\n${content}`
+        await saveGroupNote(groupName, currentNote?.trim() ? `${currentNote}\n\n---\n\n${block}` : `# 分组笔记\n\n${block}`)
+      }
       await markMessageAddedToNote(messageId)
       markAsAddedToNote(messageId)
       onNoteUpdated?.()
@@ -390,7 +404,7 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
           <div className="text-center text-gray-500 mt-8">
             <div className="text-4xl mb-3">💬</div>
             <p className="text-lg mb-2 font-medium text-gray-600">开始对话</p>
-            <p className="text-sm text-gray-400">向 AI 提问关于这篇论文的任何问题</p>
+            <p className="text-sm text-gray-400">{emptyDescription}</p>
           </div>
         ) : (
           messages.map((msg, index) => {
@@ -532,7 +546,7 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
                         >
                           {copiedMessageId === msg.id ? '✓ 已复制' : '📋 复制'}
                         </button>
-                        {localPath && (
+                        {canAddToNote && (
                           msg.addedToNote ? (
                             <span className="text-xs text-pink-600">✓ 已添加到笔记</span>
                           ) : (
@@ -737,7 +751,7 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
         <PaperMentionPopup
           ref={mentionPopupRef}
           searchText={mentionPopup.searchText}
-          currentPaperId={paperId}
+          currentPaperId={paperId ?? 0}
           onSelect={handlePaperSelect}
           onClose={() => setMentionPopup(null)}
           position={mentionPopup.position}

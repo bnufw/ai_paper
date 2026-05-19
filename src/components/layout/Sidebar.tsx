@@ -32,6 +32,7 @@ interface SidebarProps {
   collapsed: boolean
   onToggleCollapse: () => void
   refreshTrigger?: number
+  onSelectGroupChat?: (groupId: number, groupName: string) => void
 }
 
 export default function Sidebar({
@@ -44,7 +45,8 @@ export default function Sidebar({
   onOpenSettings,
   collapsed,
   onToggleCollapse,
-  refreshTrigger
+  refreshTrigger,
+  onSelectGroupChat
 }: SidebarProps) {
   const [papers, setPapers] = useState<Paper[]>([])
   const [groups, setGroups] = useState<PaperGroup[]>([])
@@ -323,6 +325,7 @@ export default function Sidebar({
             onMovePaper={handleMovePaper}
             onGenerateIdea={handleGenerateIdea}
             onToggleExcludeFromIdea={handleToggleExcludeFromIdea}
+            onSelectGroupChat={onSelectGroupChat}
           />
         )
       )}

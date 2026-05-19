@@ -1,7 +1,6 @@
 import { useRef, useState } from 'react'
 import { type Paper, type PaperGroup } from '../../services/storage/db'
 import GroupNoteModal from '../note/GroupNoteModal'
-import DomainKnowledgeModal from '../knowledge/DomainKnowledgeModal'
 
 interface GroupListProps {
   groups: PaperGroup[]
@@ -15,6 +14,7 @@ interface GroupListProps {
   onMovePaper?: (paperId: number, groupId?: number) => Promise<void> | void
   onGenerateIdea?: (groupId: number, groupName: string) => void
   onToggleExcludeFromIdea?: (paperId: number) => void
+  onSelectGroupChat?: (groupId: number, groupName: string) => void
 }
 
 export default function GroupList({
@@ -28,7 +28,8 @@ export default function GroupList({
   onDeleteGroup,
   onMovePaper,
   onGenerateIdea,
-  onToggleExcludeFromIdea
+  onToggleExcludeFromIdea,
+  onSelectGroupChat
 }: GroupListProps) {
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set())
   const [editingGroupId, setEditingGroupId] = useState<number | null>(null)
@@ -36,7 +37,6 @@ export default function GroupList({
   const [creatingGroup, setCreatingGroup] = useState(false)
   const [newGroupName, setNewGroupName] = useState('')
   const [noteModalGroup, setNoteModalGroup] = useState<string | null>(null)
-  const [knowledgeModalGroup, setKnowledgeModalGroup] = useState<{ id: number; name: string } | null>(null)
   const [movingPaperId, setMovingPaperId] = useState<number | null>(null)
   const [movingBusyPaperId, setMovingBusyPaperId] = useState<number | null>(null)
   const createHandledRef = useRef(false)
@@ -250,12 +250,12 @@ export default function GroupList({
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
-                    setKnowledgeModalGroup({ id: group.id!, name: group.name })
+                    onSelectGroupChat?.(group.id!, group.name)
                   }}
                   className="text-blue-400 hover:text-blue-300 mr-2"
-                  title="领域知识"
+                  title="分组 Chat"
                 >
-                  📚
+                  💬
                 </button>
                 <button
                   onClick={(e) => {
@@ -333,14 +333,6 @@ export default function GroupList({
         isOpen={noteModalGroup !== null}
         onClose={() => setNoteModalGroup(null)}
         groupName={noteModalGroup || ''}
-      />
-
-      {/* 领域知识弹窗 */}
-      <DomainKnowledgeModal
-        isOpen={knowledgeModalGroup !== null}
-        onClose={() => setKnowledgeModalGroup(null)}
-        groupId={knowledgeModalGroup?.id ?? 0}
-        groupName={knowledgeModalGroup?.name || ''}
       />
     </div>
   )

@@ -20,6 +20,7 @@ function App() {
   const [showSettings, setShowSettings] = useState(false)
   const [showStorageSetup, setShowStorageSetup] = useState(false)
   const [currentPaperId, setCurrentPaperId] = useState<number | null>(null)
+  const [currentGroupChat, setCurrentGroupChat] = useState<{ id: number; name: string } | null>(null)
   const [currentIdeaSession, setCurrentIdeaSession] = useState<IdeaSession | null>(null)
   const [showUploader, setShowUploader] = useState(true)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -99,6 +100,7 @@ function App() {
   const handlePaperSelect = async (paperId: number) => {
     setCurrentPaperId(paperId)
     setCurrentIdeaSession(null) // 切换到论文时清空 Idea 会话
+    setCurrentGroupChat(null)
     setShowUploader(false)
     setActiveTab('paper')
 
@@ -109,6 +111,15 @@ function App() {
   const handleSelectIdeaSession = (session: IdeaSession) => {
     setCurrentIdeaSession(session)
     setCurrentPaperId(null) // 切换到 Idea 时清空论文选择
+    setCurrentGroupChat(null)
+    setShowUploader(false)
+  }
+
+  const handleGroupChatSelect = (groupId: number, groupName: string) => {
+    setCurrentGroupChat({ id: groupId, name: groupName })
+    setCurrentPaperId(null)
+    setCurrentIdeaSession(null)
+    setCurrentPaperLocalPath(undefined)
     setShowUploader(false)
   }
 
@@ -122,11 +133,13 @@ function App() {
   const handleNewPaper = () => {
     setCurrentPaperId(null)
     setCurrentIdeaSession(null)
+    setCurrentGroupChat(null)
     setShowUploader(true)
   }
 
   const handleUploadComplete = async (paperId: number) => {
     setCurrentPaperId(paperId)
+    setCurrentGroupChat(null)
     setShowUploader(false)
     setPaperListVersion(v => v + 1)
     const paper = await db.papers.get(paperId)
@@ -151,6 +164,7 @@ function App() {
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
         refreshTrigger={paperListVersion}
+        onSelectGroupChat={handleGroupChatSelect}
       />
 
       {/* Main Content */}
@@ -190,6 +204,32 @@ function App() {
                   onSendMessage={ideaChat.sendMessage}
                   onClearMessages={ideaChat.clearMessages}
                   onBack={handleNewPaper}
+                />
+              }
+              defaultLeftWidth={50}
+              minLeftWidth={30}
+              minRightWidth={30}
+            />
+          ) : currentGroupChat ? (
+            /* Group Chat View: 分组说明 + 聊天面板 */
+            <ResizablePanel
+              leftPanel={
+                <div className="h-full flex flex-col items-center justify-center bg-gradient-to-br from-gray-50 to-blue-50 p-8 text-center">
+                  <div className="text-6xl mb-6">💬</div>
+                  <h2 className="text-2xl font-bold text-gray-700 mb-4">
+                    {currentGroupChat.name}
+                  </h2>
+                  <p className="text-gray-500 max-w-md">
+                    右侧对话会读取该分组下所有论文内容，AI 回复可以添加到分组笔记。
+                  </p>
+                </div>
+              }
+              rightPanel={
+                <ChatPanel
+                  paperId={null}
+                  groupId={currentGroupChat.id}
+                  groupName={currentGroupChat.name}
+                  localPath={undefined}
                 />
               }
               defaultLeftWidth={50}

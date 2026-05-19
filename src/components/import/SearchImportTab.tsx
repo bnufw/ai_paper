@@ -870,9 +870,9 @@ export default function SearchImportTab({ onImportComplete }: SearchImportTabPro
   const prepYearSelectValue = selectedPrepYear || prepYears[0] || ''
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-6">
-        <div className="space-y-4">
+    <div className="space-y-5">
+      <div className="grid grid-cols-1 gap-6 items-start lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px]">
+        <aside className="order-2 space-y-4 lg:sticky lg:top-4 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto lg:pr-1">
           <section className="bg-white border border-gray-200 rounded-lg p-5">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-base font-semibold text-gray-800">导入目标</h2>
@@ -1033,12 +1033,13 @@ export default function SearchImportTab({ onImportComplete }: SearchImportTabPro
               <div className="py-6 text-center text-gray-400 text-sm">暂无搜索记录</div>
             )}
           </section>
-        </div>
+        </aside>
 
-        <section className="bg-white border border-gray-200 rounded-lg p-5">
-          <div className="mb-4">
-            <h2 className="text-base font-semibold text-gray-800">搜索论文</h2>
-          </div>
+        <div className="order-1 min-w-0 space-y-5">
+          <section className="bg-white border border-gray-200 rounded-lg p-5 lg:p-6">
+            <div className="mb-4">
+              <h2 className="text-base font-semibold text-gray-800">搜索论文</h2>
+            </div>
 
           <div className="space-y-4 mb-4">
             <div>
@@ -1214,8 +1215,9 @@ export default function SearchImportTab({ onImportComplete }: SearchImportTabPro
               {progress?.message || '正在处理搜索请求...'}
             </div>
           )}
+        </section>
 
-          <div className="mt-5 border-t border-gray-200 pt-5">
+        <section className="min-h-[420px] bg-white border border-gray-200 rounded-lg p-5 lg:p-6">
             <div className="flex items-center justify-between gap-4 mb-4">
               <div>
                 <h2 className="text-base font-semibold text-gray-800">搜索结果</h2>
@@ -1251,8 +1253,8 @@ export default function SearchImportTab({ onImportComplete }: SearchImportTabPro
                 搜索结果会显示在这里。
               </div>
             )}
-          </div>
         </section>
+        </div>
       </div>
     </div>
   )

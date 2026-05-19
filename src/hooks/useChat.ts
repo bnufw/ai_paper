@@ -1,13 +1,22 @@
 import { useState, useEffect, useRef } from 'react'
-import { db, type Message, type Conversation, type MessageImage, deleteConversation as dbDeleteConversation, renameConversation as dbRenameConversation, exportConversation as dbExportConversation, clearConversationMessages as dbClearConversationMessages, getPaperMarkdown, deleteMessagesAfter, getGeminiSettings } from '../services/storage/db'
+import {
+  db,
+  type Message,
+  type Conversation,
+  type MessageImage,
+  deleteConversation as dbDeleteConversation,
+  renameConversation as dbRenameConversation,
+  exportConversation as dbExportConversation,
+  clearConversationMessages as dbClearConversationMessages,
+  getPaperMarkdown,
+  deleteMessagesAfter,
+  getGeminiSettings
+} from '../services/storage/db'
 import { sendMessageToGemini } from '../services/ai/geminiClient'
-import { loadDomainKnowledge } from '../services/knowledge/domainKnowledgeService'
 import { getOrCreatePaperCache, refreshCacheTTL, invalidateCache } from '../services/ai/cacheService'
 
 // 引用解析正则
 const MENTION_PATTERN = /@\[([^\]]+)\]\(paperId:(\d+)\)/g
-// 领域知识引用（不使用 g 标志避免 lastIndex 问题）
-const DOMAIN_KNOWLEDGE_PATTERN = /@领域知识/
 
 /**
  * 解析消息中的论文引用
@@ -27,10 +36,16 @@ function parseMentions(content: string): { paperId: number; title: string }[] {
   return mentions
 }
 
+interface ChatScope {
+  paperId: number | null
+  groupId?: number | null
+  groupName?: string | null
+}
+
 /**
- * AI对话Hook
+ * AI 对话 Hook
  */
-export function useChat(paperId: number) {
+export function useChat({ paperId, groupId, groupName }: ChatScope) {
   const [messages, setMessages] = useState<Message[]>([])
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [currentConversationId, setCurrentConversationId] = useState<number | null>(null)
@@ -46,6 +61,29 @@ export function useChat(paperId: number) {
   const cacheNameRef = useRef<string | null>(null)
   const cacheInitializedRef = useRef(false)
 
+  const hasGroupScope = paperId == null && groupId != null
+  const hasPaperScope = paperId != null
+  const scopeKey = hasPaperScope ? `paper:${paperId}` : hasGroupScope ? `group:${groupId}` : 'none'
+
+  /**
+   * 按当前 scope 加载对话
+   */
+  const loadConversationsByScope = async (): Promise<Conversation[]> => {
+    if (hasPaperScope) {
+      return db.conversations.where('paperId').equals(paperId).reverse().sortBy('createdAt')
+    }
+    if (hasGroupScope) {
+      return db.conversations.where('groupId').equals(groupId!).reverse().sortBy('createdAt')
+    }
+    return []
+  }
+
+  const refreshConversations = async () => {
+    const convs = await loadConversationsByScope()
+    setConversations(convs)
+    return convs
+  }
+
   // 刷新消息列表
   const refreshMessages = async (conversationId: number) => {
     const msgs = await db.messages
@@ -55,17 +93,61 @@ export function useChat(paperId: number) {
     setMessages(msgs)
   }
 
+  // 构建分组上下文内容
+  const buildGroupContext = async () => {
+    if (groupId == null) {
+      throw new Error('未选择分组')
+    }
+
+    const papers = await db.papers.where('groupId').equals(groupId).toArray()
+    if (papers.length === 0) {
+      throw new Error('该分组下没有论文')
+    }
+
+    const group = await db.groups.get(groupId)
+    const title = group?.name || groupName || `分组 ${groupId}`
+    const paperContexts = await Promise.all(
+      papers.map(async (paper) => {
+        try {
+          const markdown = await getPaperMarkdown(paper.id!)
+          return `\n\n## 论文：${paper.title}\n\n${markdown}`
+        } catch (err) {
+          console.error(`读取论文失败 (ID: ${paper.id}):`, err)
+          return `\n\n## 论文：${paper.title}\n\n[无法读取论文内容]`
+        }
+      })
+    )
+
+    return `# 分组内容：${title}\n${paperContexts.join('')}`
+  }
+
   // 准备对话（获取或创建）
   const prepareConversation = async (content: string, editingId?: number): Promise<number> => {
+    if (!hasPaperScope && !hasGroupScope) {
+      throw new Error('未选择聊天对象')
+    }
+
     let convId = currentConversationId
     if (!convId) {
       const now = new Date()
-      convId = await db.conversations.add({
-        paperId,
+      const baseConversation = {
         title: content.substring(0, 30).trim() + (content.length > 30 ? '...' : ''),
         createdAt: now,
         updatedAt: now
-      })
+      }
+
+      if (hasPaperScope) {
+        convId = await db.conversations.add({
+          ...baseConversation,
+          paperId: paperId!
+        })
+      } else {
+        convId = await db.conversations.add({
+          ...baseConversation,
+          groupId: groupId!
+        })
+      }
+
       setCurrentConversationId(convId)
     } else if (!editingId) {
       // 非编辑模式下，检查是否需要更新标题
@@ -82,24 +164,26 @@ export function useChat(paperId: number) {
     return convId
   }
 
-  // 论文切换时重置所有状态
+  // 切换 scope 时重置所有状态
   useEffect(() => {
     setCurrentConversationId(null)
     setMessages([])
     setLastClearAt(null)
     cacheNameRef.current = null
     cacheInitializedRef.current = false
-  }, [paperId])
+    setConversations([])
+  }, [scopeKey])
 
   // 加载对话列表
   useEffect(() => {
     async function loadConversations() {
-      const convs = await db.conversations
-        .where('paperId')
-        .equals(paperId)
-        .reverse()
-        .sortBy('createdAt')
+      if (!hasPaperScope && !hasGroupScope) {
+        setConversations([])
+        setCurrentConversationId(null)
+        return
+      }
 
+      const convs = await loadConversationsByScope()
       setConversations(convs)
 
       // 自动选择第一个对话
@@ -109,7 +193,7 @@ export function useChat(paperId: number) {
     }
 
     loadConversations()
-  }, [paperId, currentConversationId])
+  }, [scopeKey, currentConversationId])
 
   // 加载当前对话的消息
   useEffect(() => {
@@ -139,24 +223,28 @@ export function useChat(paperId: number) {
    * 创建新对话
    */
   const createNewConversation = async () => {
-    const now = new Date()
-    const convId = await db.conversations.add({
-      paperId,
-      title: '新对话',
-      createdAt: now,
-      updatedAt: now
-    })
+    if (!hasPaperScope && !hasGroupScope) return
 
+    const now = new Date()
+    const convPayload = hasPaperScope
+      ? {
+          paperId: paperId!,
+          title: '新对话',
+          createdAt: now,
+          updatedAt: now
+        }
+      : {
+          groupId: groupId!,
+          title: '新对话',
+          createdAt: now,
+          updatedAt: now
+        }
+
+    const convId = await db.conversations.add(convPayload)
     setCurrentConversationId(convId)
     setMessages([])
 
-    // 刷新对话列表
-    const convs = await db.conversations
-      .where('paperId')
-      .equals(paperId)
-      .reverse()
-      .sortBy('createdAt')
-    setConversations(convs)
+    await refreshConversations()
   }
 
   /**
@@ -166,13 +254,7 @@ export function useChat(paperId: number) {
     try {
       await dbDeleteConversation(conversationId)
 
-      // 刷新对话列表
-      const convs = await db.conversations
-        .where('paperId')
-        .equals(paperId)
-        .reverse()
-        .sortBy('createdAt')
-      setConversations(convs)
+      const convs = await refreshConversations()
 
       // 如果删除的是当前对话,切换到第一个对话或null
       if (conversationId === currentConversationId) {
@@ -194,14 +276,7 @@ export function useChat(paperId: number) {
 
     try {
       await dbRenameConversation(conversationId, newTitle)
-
-      // 刷新对话列表
-      const convs = await db.conversations
-        .where('paperId')
-        .equals(paperId)
-        .reverse()
-        .sortBy('createdAt')
-      setConversations(convs)
+      await refreshConversations()
     } catch (err) {
       console.error('重命名对话失败:', err)
       throw new Error('重命名对话失败')
@@ -237,6 +312,10 @@ export function useChat(paperId: number) {
    */
   const sendMessage = async (content: string, images?: MessageImage[], editingId?: number) => {
     if (!content.trim() && (!images || images.length === 0)) return
+    if (!hasPaperScope && !hasGroupScope) {
+      setError('未选择聊天对象')
+      return
+    }
 
     // 立即更新UI状态，让用户感知到响应
     setLoading(true)
@@ -252,12 +331,14 @@ export function useChat(paperId: number) {
         throw new Error('单条消息最多引用3篇论文')
       }
 
-      // 检查是否引用了领域知识
-      const hasDomainKnowledgeRef = DOMAIN_KNOWLEDGE_PATTERN.test(content)
-
-      // 并行执行：获取论文 + 准备对话ID + 获取引用内容 + 获取领域知识
-      const [paper, conversationId, mentionContents, domainKnowledge] = await Promise.all([
-        db.papers.get(paperId),
+      const [contextWithMentions, conversationId, mentionContents] = await Promise.all([
+        hasPaperScope
+          ? (async () => {
+              const paper = await db.papers.get(paperId)
+              if (!paper) throw new Error('论文不存在')
+              return await getPaperMarkdown(paper.id!)
+            })()
+          : buildGroupContext(),
         prepareConversation(content, editingId),
         mentions.length > 0
           ? Promise.all(mentions.map(async (m) => {
@@ -269,36 +350,17 @@ export function useChat(paperId: number) {
                 return `\n\n[引用论文: ${m.title}]\n[无法读取论文内容]\n[/引用论文]\n`
               }
             }))
-          : Promise.resolve([]),
-        hasDomainKnowledgeRef
-          ? (async () => {
-              const p = await db.papers.get(paperId)
-              if (p?.groupId) {
-                const group = await db.groups.get(p.groupId)
-                if (group) {
-                  return await loadDomainKnowledge(group.name)
-                }
-              }
-              return null
-            })()
-          : Promise.resolve(null)
-      ])
+          : Promise.resolve([])
+      ]) as [string, number, string[]]
 
-      if (!paper) {
-        throw new Error('论文不存在')
-      }
+      const baseContext = contextWithMentions
 
       // 构建上下文
-      let contextWithMentions = paper.markdown
-
-      // 添加领域知识
-      if (domainKnowledge) {
-        contextWithMentions += `\n\n---\n## 领域知识\n${domainKnowledge}\n---`
-      }
+      let context = baseContext
 
       // 添加引用论文
       if (mentionContents.length > 0) {
-        contextWithMentions += mentionContents.join('')
+        context += mentionContents.join('')
       }
 
       // 获取历史消息（用于构建对话上下文）
@@ -352,29 +414,24 @@ export function useChat(paperId: number) {
       }
 
       // 获取或创建缓存（仅在没有额外引用时使用缓存）
-      // 有引用论文或领域知识时，上下文会变化，不使用缓存
-      const hasExtraContext = mentionContents.length > 0 || domainKnowledge
+      const hasExtraContext = mentionContents.length > 0
       let cacheName: string | null = null
 
-      if (!hasExtraContext) {
+      if (!hasExtraContext && hasPaperScope && !hasGroupScope) {
         const settings = await getGeminiSettings()
-        // 每次都调用 getOrCreatePaperCache，它内部会检查缓存有效性（TTL/模型）
-        // 有效则复用，无效则自动重建
-        cacheName = await getOrCreatePaperCache(paperId, paper.markdown, settings.model)
+        cacheName = await getOrCreatePaperCache(paperId!, baseContext, settings.model)
         cacheNameRef.current = cacheName
         cacheInitializedRef.current = !!cacheName
-      } else {
-        // 有额外引用时，后台刷新缓存 TTL 以防长时间不用导致过期
-        if (cacheNameRef.current) {
-          refreshCacheTTL(paperId).catch(() => {})
-        }
+      } else if (hasPaperScope && cacheNameRef.current) {
+        // 有额外上下文时，后台刷新缓存 TTL 以防长时间不用导致过期
+        refreshCacheTTL(paperId!).catch(() => {})
       }
 
       // 调用AI（支持缓存错误自愈重试）
       let result
       try {
         result = await sendMessageToGemini(
-          contextWithMentions,
+          context,
           content,
           history,
           images,
@@ -387,7 +444,7 @@ export function useChat(paperId: number) {
         // 检查是否为缓存错误，如果是则失效缓存并用传统模式重试
         if (err.isCacheError && cacheName) {
           console.log('[Chat] 缓存失效，使用传统模式重试')
-          await invalidateCache(paperId)
+          await invalidateCache(paperId!)
           cacheNameRef.current = null
           cacheInitializedRef.current = false
           // 重置流式状态
@@ -395,7 +452,7 @@ export function useChat(paperId: number) {
           setStreamingThought('')
           // 不使用缓存重试
           result = await sendMessageToGemini(
-            contextWithMentions,
+            context,
             content,
             history,
             images,
@@ -450,12 +507,7 @@ export function useChat(paperId: number) {
       })
 
       // 刷新对话列表（确保自动命名后标题更新到UI）
-      const updatedConvs = await db.conversations
-        .where('paperId')
-        .equals(paperId)
-        .reverse()
-        .sortBy('createdAt')
-      setConversations(updatedConvs)
+      await refreshConversations()
 
       // 刷新消息列表
       const finalMessages = await db.messages
