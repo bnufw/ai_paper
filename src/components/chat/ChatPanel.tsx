@@ -19,6 +19,39 @@ import MessageContent from './MessageContent'
 import 'katex/dist/katex.min.css'
 import 'highlight.js/styles/github-dark.css'
 
+const SUMMARIZE_PROMPT = `你是 =第一性原理思考者=，擅长从万物基本原理和常识出发，推演做事思路。请你仔细阅读并分析这篇文章，就以下 6 点进行有条理的列举与讲解，**省略所有客套话**，并用 markdown 形式给出（不要引入任何形式的 latex，公式用文本形式给出）：
+
+1. **Task：** 这篇文章解决的是什么问题？请尽可能形式化！
+2. **Challenge：** 传统的方法在解决这个问题时遇到了什么挑战？
+3. **Insight & Novelty：**
+    1. 作者的 Insight 是被什么 Inspiration 启发的？
+    2. 作者的 Insight 究竟是什么？是在什么方面上的 Insight？对于每个 Insight，是哪些上述的 Inspiration 启发的？
+    3. Novelty：作者本篇文章的 Novelty 体现在何处？是否有架构上、方法上还是策略上的，支持自己 Insight 的创新？
+    4. 对于每一个 Novelty，请你清晰的严格按这个格式描述：【创新点解决的问题是什么】->【受哪个 insight 启发】->【设计了什么创新点，尽可能具体描述】
+4. **Potential flaw：**
+    1. 当前问题的情境是否有局限？有没有可能通过延伸架构，解决一些新情境（例如：维度更多、条件更多、约束更多）下的问题？
+    2. 在目前情境下，若数据有什么样的不好的性质，解决可能会遇到特别的困难？
+    3. 在以上这些困难中，哪种困难值得深度挖掘写成 paper?
+5. **Motivation：**
+    1. 请你总结这篇文章想到 general idea 的方式，最好以问句形式给出（如：之前的方法...，那可不可以尝试一下 xxx），遵循第一性原理，从问题的本质出发，找到最合理、最容易的，想到本篇文章 idea 的方式。`
+
+const SLASH_COMMANDS = [
+  {
+    command: 'clear',
+    label: '/clear',
+    description: '清空对话上下文',
+    icon: '🧹',
+    iconClassName: 'text-orange-500'
+  },
+  {
+    command: 'summarize',
+    label: '/summarize',
+    description: '插入论文总结提示词',
+    icon: '📝',
+    iconClassName: 'text-blue-500'
+  }
+] as const
+
 interface ChatPanelProps {
   paperId: number
   localPath: string | undefined
@@ -63,12 +96,18 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
   const [copiedMessageId, setCopiedMessageId] = useState<number | null>(null)
   const [slashCommand, setSlashCommand] = useState<{
     show: boolean
+    searchText: string
     position: { top: number; left: number }
   } | null>(null)
+  const [slashSelectedIndex, setSlashSelectedIndex] = useState(0)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const mentionPopupRef = useRef<PaperMentionPopupRef>(null)
+
+  const filteredSlashCommands = slashCommand
+    ? SLASH_COMMANDS.filter(item => item.command.startsWith(slashCommand.searchText.toLowerCase()))
+    : []
 
   // 加载模型配置
   useEffect(() => {
@@ -180,16 +219,20 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
     const textBeforeCursor = value.substring(0, cursorPos)
 
     // 检测斜杠命令触发（仅在行首输入 / 时）
-    if (textBeforeCursor === '/' && textareaRef.current) {
+    const slashMatch = textBeforeCursor.match(/^\/(\w*)$/)
+    if (slashMatch && textareaRef.current) {
       const rect = textareaRef.current.getBoundingClientRect()
       setSlashCommand({
         show: true,
+        searchText: slashMatch[1],
         position: { top: rect.top, left: rect.left }
       })
+      setSlashSelectedIndex(0)
       setMentionPopup(null)
       return
     } else {
       setSlashCommand(null)
+      setSlashSelectedIndex(0)
     }
 
     // 检测@符号触发
@@ -241,10 +284,14 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
   // 处理斜杠命令选择
   const handleSlashCommand = (command: string) => {
     setSlashCommand(null)
-    setInputValue('')
 
     if (command === 'clear') {
+      setInputValue('')
       clearMessages()
+    } else if (command === 'summarize') {
+      const cursorPos = textareaRef.current?.selectionStart ?? inputValue.length
+      const textAfterCursor = inputValue.substring(cursorPos)
+      setInputValue(SUMMARIZE_PROMPT + (textAfterCursor ? `\n\n${textAfterCursor}` : ''))
     }
 
     textareaRef.current?.focus()
@@ -278,14 +325,23 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     // 斜杠命令弹窗显示时，处理键盘事件
-    if (slashCommand) {
+    if (slashCommand && filteredSlashCommands.length > 0) {
       if (e.key === 'Enter') {
         e.preventDefault()
-        handleSlashCommand('clear')
+        handleSlashCommand(filteredSlashCommands[slashSelectedIndex]?.command || filteredSlashCommands[0].command)
+        return
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setSlashSelectedIndex(prev => (prev + 1) % filteredSlashCommands.length)
+        return
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setSlashSelectedIndex(prev => (prev - 1 + filteredSlashCommands.length) % filteredSlashCommands.length)
         return
       } else if (e.key === 'Escape') {
         e.preventDefault()
         setSlashCommand(null)
+        setSlashSelectedIndex(0)
         return
       }
     }
@@ -650,7 +706,7 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
       )}
 
       {/* 斜杠命令弹窗 */}
-      {slashCommand && (
+      {slashCommand && filteredSlashCommands.length > 0 && (
         <div
           className="fixed z-50 bg-gray-50 border border-gray-200 rounded-lg shadow-lg py-1 min-w-[160px]"
           style={{
@@ -658,16 +714,21 @@ export default function ChatPanel({ paperId, localPath, onNoteUpdated }: ChatPan
             left: slashCommand.position.left
           }}
         >
-          <button
-            onClick={() => handleSlashCommand('clear')}
-            className="w-full px-3 py-2 text-left hover:bg-blue-50 flex items-center gap-2 text-sm"
-          >
-            <span className="text-orange-500">🧹</span>
-            <div>
-              <div className="font-medium text-gray-800">/clear</div>
-              <div className="text-xs text-gray-500">清空对话上下文</div>
-            </div>
-          </button>
+          {filteredSlashCommands.map((item, index) => (
+            <button
+              key={item.command}
+              onClick={() => handleSlashCommand(item.command)}
+              className={`w-full px-3 py-2 text-left hover:bg-blue-50 flex items-center gap-2 text-sm ${
+                index < filteredSlashCommands.length - 1 ? 'border-b border-gray-100' : ''
+              } ${index === slashSelectedIndex ? 'bg-blue-50' : ''}`}
+            >
+              <span className={item.iconClassName}>{item.icon}</span>
+              <div>
+                <div className="font-medium text-gray-800">{item.label}</div>
+                <div className="text-xs text-gray-500">{item.description}</div>
+              </div>
+            </button>
+          ))}
         </div>
       )}
 
